@@ -55,7 +55,7 @@ def compute_MK(
     M_max: int = 50,
     N_budget: int=200,
     l_inflect: float=2,
-    a: float = 0.8,
+    a: float = 0.7,
 ) -> (int, int):
     """
     Compute (M^ell, K^ell) given current layer and frontier size.
@@ -107,7 +107,7 @@ class SampledPropagator(nn.Module):
         M: int,
         K: int,
         agg: str = "logsumexp",
-        device: str = "cpu",
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),
     ):
         super().__init__()
         self.graph = graph
@@ -261,7 +261,6 @@ class SampledPropagator(nn.Module):
                 layer_idx=l,
                 frontier_size=len(frontier_list)
             )
-            print(f"Layer {l}:  Sampling with M={M_l}, K={K_l}")
             h_frontier = torch.stack(
                 [node_states.get(s, torch.zeros(self.hidden_dim, device=device))
                 for s in frontier_list],
@@ -373,7 +372,7 @@ class UserItemScoringModel(nn.Module):
         K: int,
         num_layers: int,
         agg: str = "mean",
-        device: str = "cpu",
+        device: str = "cuda" if torch.cuda.is_available() else "cpu",
     ):
         super().__init__()
         self.graph = graph

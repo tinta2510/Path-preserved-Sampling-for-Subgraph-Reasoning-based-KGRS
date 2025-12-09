@@ -56,7 +56,7 @@ def run_training():
     M = 30           # expanders per layer
     K = 15         # neighbors per expander
     num_layers = 4  # propagation depth
-    device = "cpu"  # or "cuda" if available
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
     model = UserItemScoringModel(
         graph=graph,
