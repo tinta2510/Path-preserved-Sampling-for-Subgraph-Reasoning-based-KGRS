@@ -1,9 +1,90 @@
 from typing import List, Tuple, Dict, Set
+import math
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F 
  
 from graph_utils import Graph, GraphMeta
+
+def sample_gumbel(shape, device, eps=1e-20):
+    """Sample Gumbel(0, 1) noise."""
+    U = torch.rand(shape, device=device)
+    return -torch.log(-torch.log(U + eps) + eps)
+
+
+def gumbel_topk_straight_through(logits, k, tau=1.0):
+    """
+    Gumbel-TopK with straight-through:
+
+    Args:
+      logits: 1D tensor [n]
+      k: number of elements to select (Top-K)
+      tau: temperature for Gumbel-softmax
+
+    Returns:
+      hard_mask: [n] float tensor in {0,1}, with exactly k ones (forward)
+      soft_probs: [n] float tensor, gradient-friendly soft selection (backward)
+      (the returned hard_mask has gradients flowing through soft_probs)
+    """
+    device = logits.device
+    n = logits.size(0)
+
+    # Add Gumbel noise
+    gumbel_noise = sample_gumbel((n,), device=device)
+    y = (logits + gumbel_noise) / tau  # [n]
+
+    # Softmax probabilities (soft selection)
+    soft_probs = F.softmax(y, dim=0)  # [n]
+
+    # Hard Top-K: get indices of largest soft_probs
+    _, topk_idx = torch.topk(soft_probs, k=min(k, n))
+    hard_mask = torch.zeros_like(soft_probs)
+    hard_mask[topk_idx] = 1.0
+
+    # Straight-through estimator:
+    # forward uses hard_mask, backward uses soft_probs
+    hard_mask_st = hard_mask + (soft_probs - soft_probs.detach())
+
+    return hard_mask_st, soft_probs
+
+def compute_MK(
+    layer_idx: int,
+    frontier_size: int,
+    M_min: int = 5,
+    M_max: int = 50,
+    N_budget: int=200,
+    l_inflect: float=2,
+    a: float = 0.8,
+) -> (int, int):
+    """
+    Compute (M^ell, K^ell) given current layer and frontier size.
+
+    layer_idx: ell
+    frontier_size: |F^ell|
+    M_min, M_max: M_s, M_h
+    N_budget: N (target M*K)
+    l_inflect: l_i
+    a: slope
+    """
+    if frontier_size == 0:
+        return 0, 0
+
+    # sigmoid schedule for M^ell
+    x = a * (layer_idx - l_inflect)
+    s = 1.0 / (1.0 + math.exp(-x))  # sigma
+    M_real = M_min + (M_max - M_min) * s
+
+    M = int(round(M_real))
+    M = max(1, min(M, frontier_size))  # clamp to [1, |F|]
+
+    # derive K^ell from N = M * K
+    if M > 0:
+        K = max(1, N_budget // M)
+    else:
+        K = 0
+
+    return M, K
 
 class SampledPropagator(nn.Module):
     """
@@ -176,24 +257,34 @@ class SampledPropagator(nn.Module):
 
             # -------- Stage A: choose expanders among frontier --------
             frontier_list = list(F)
-            h_frontier = []
-            for nid in frontier_list:
-                h_frontier.append(
-                    node_states.get(nid, torch.zeros(self.hidden_dim, device=device))
-                )
-            h_frontier = torch.stack(h_frontier, dim=0)  # [|F|, d]
+            M_l, K_l = compute_MK(
+                layer_idx=l,
+                frontier_size=len(frontier_list)
+            )
+            print(f"Layer {l}:  Sampling with M={M_l}, K={K_l}")
+            h_frontier = torch.stack(
+                [node_states.get(s, torch.zeros(self.hidden_dim, device=device))
+                for s in frontier_list],
+                dim=0,
+            )  # [|F|, d]
 
             alpha = self.expand_mlp(h_frontier).squeeze(-1)  # [|F|]
-            M_eff = min(self.M, len(frontier_list))
-            _, topk_idx = torch.topk(alpha, k=M_eff)
-            topk_idx = topk_idx.tolist()
 
-            E: Set[int] = {frontier_list[idx] for idx in topk_idx}  # expanders
-            C: Set[int] = F.difference(E)                           # carry-over
+            M_eff = min(M_l, len(frontier_list))
+
+            # ---- Gumbel-TopK straight-through over frontier ----
+            expander_mask, _ = gumbel_topk_straight_through(alpha, k=M_eff, tau=1.0)  # [|F|]
+
+            E = set()
+            for i, s in enumerate(frontier_list):
+                if expander_mask[i] > 0.5:  # hard selection
+                    E.add(s)
+
+            C = F.difference(E)  # carry-over frontier (not expanded this layer)
 
             if verbose:
-                print(f"  Selected {len(E)} expanders, {len(C)} carry-over.")
-
+                print(f"  Selected {len(E)} expanders (Gumbel-TopK), {len(C)} carry-over.")
+                
             # -------- Stage B: neighbors for each expander --------
             msg_dict: Dict[int, List[torch.Tensor]] = {}
 
@@ -219,11 +310,14 @@ class SampledPropagator(nn.Module):
                     g = self.gru(x_in, h_s_expanded)            # [deg(s), d]
 
                     beta = self.neighbor_mlp(g).squeeze(-1)     # [deg(s)]
-                    K_eff = min(self.K, dst_nodes.numel())
-                    _, topk_eidx = torch.topk(beta, k=K_eff)
-                    topk_eidx = topk_eidx.tolist()
+                    K_eff = min(K_l, dst_nodes.numel())
 
-                    for eidx in topk_eidx:
+                    # ---- Gumbel-TopK straight-through over neighbors of s ----
+                    neighbor_mask, _ = gumbel_topk_straight_through(beta, k=K_eff, tau=1.0)  # [deg(s)]
+
+                    for eidx in range(dst_nodes.size(0)):
+                        if neighbor_mask[eidx] <= 0.5:
+                            continue
                         v = int(dst_nodes[eidx].item())
                         msg = g[eidx]
                         if v not in msg_dict:

@@ -2,46 +2,6 @@ from typing import List, Tuple, Dict, Set
 import random
 import math
 
-def sample_gumbel(shape, device, eps=1e-20):
-    """Sample Gumbel(0, 1) noise."""
-    U = torch.rand(shape, device=device)
-    return -torch.log(-torch.log(U + eps) + eps)
-
-
-def gumbel_topk_straight_through(logits, k, tau=1.0):
-    """
-    Gumbel-TopK with straight-through:
-
-    Args:
-      logits: 1D tensor [n]
-      k: number of elements to select (Top-K)
-      tau: temperature for Gumbel-softmax
-
-    Returns:
-      hard_mask: [n] float tensor in {0,1}, with exactly k ones (forward)
-      soft_probs: [n] float tensor, gradient-friendly soft selection (backward)
-      (the returned hard_mask has gradients flowing through soft_probs)
-    """
-    device = logits.device
-    n = logits.size(0)
-
-    # Add Gumbel noise
-    gumbel_noise = sample_gumbel((n,), device=device)
-    y = (logits + gumbel_noise) / tau  # [n]
-
-    # Softmax probabilities (soft selection)
-    soft_probs = F.softmax(y, dim=0)  # [n]
-
-    # Hard Top-K: get indices of largest soft_probs
-    _, topk_idx = torch.topk(soft_probs, k=min(k, n))
-    hard_mask = torch.zeros_like(soft_probs)
-    hard_mask[topk_idx] = 1.0
-
-    # Straight-through estimator:
-    # forward uses hard_mask, backward uses soft_probs
-    hard_mask_st = hard_mask + (soft_probs - soft_probs.detach())
-
-    return hard_mask_st, soft_probs
 
 def load_iter_pairs(iter_path: str) -> List[Tuple[int, int]]:
     """
@@ -140,6 +100,7 @@ def train_step_bpr(
     pos_item_id: int,
     user_pos_dict: Dict[int, Set[int]],
     num_items: int,
+    num_negatives: int = 10,
 ) -> float:
     """
     Perform one BPR training step for a single (user, pos_item) pair.
@@ -149,27 +110,29 @@ def train_step_bpr(
     """
     model.train()
 
-    # 1) Sample one negative item for this user
-    neg_item_id = sample_negative_item(
-        user_id=user_id,
-        num_items=num_items,
-        user_pos_dict=user_pos_dict,
-    )
+    # 1) Sample negative items for this user
+    neg_item_ids = []
+    while len(neg_item_ids) < num_negatives:
+        j = sample_negative_item(user_id, num_items, user_pos_dict)
+        neg_item_ids.append(j)
+
 
     # 2) Forward: scores for [pos, neg]
-    item_ids = [pos_item_id, neg_item_id]
+    item_ids = [pos_item_id] + neg_item_ids  # length = 1 + N
     scores, node_states, visited = model(
         user_id=user_id,
         item_ids=item_ids,
-        verbose=False,   # set True if you want to see sampling details
+        verbose=False,
     )
-    s_pos = scores[0]
-    s_neg = scores[1]
 
+    s_pos = scores[0]          # scalar
+    s_negs = scores[1:]        # [N]
+    
     # 3) BPR loss: -log sigma(s_pos - s_neg)
-    diff = s_pos - s_neg
-    loss = -torch.log(torch.sigmoid(diff) + 1e-8)
-
+    diffs = s_pos - s_negs          # [N]
+    loss_vec = -torch.log(torch.sigmoid(diffs) + 1e-8)  # [N]
+    loss = loss_vec.mean()          # scalar
+    
     # 4) Backprop
     optimizer.zero_grad()
     loss.backward()
