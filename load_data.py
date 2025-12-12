@@ -13,7 +13,12 @@ class DataLoader:
         self.task_dir = task_dir
         self.device = device
         
-        if  task_dir == 'data/Dis_5fold_user/' or task_dir == 'data/Dis_5fold_item/' or  task_dir == 'data/new_last-fm/'or  task_dir == 'data/new_amazon-book/'or  task_dir == 'data/new_alibaba-fashion/':
+        data_folder = Path(task_dir).name
+        if  data_folder in {
+            'new_last-fm',
+            'new_amazon-book',
+            'new_alibaba-fashion'
+        }:
             self.all_cf = self.read_cf(self.task_dir + 'train_1.txt')  # all_cf  (np.array)
             self.test_cf = self.read_cf(self.task_dir + 'test_1.txt')
         else:
@@ -37,7 +42,11 @@ class DataLoader:
         self.n_rel = max(self.arraytriple[:,1]) + 1  
                 
         data_folder = Path(task_dir).name
-        if data_folder in {'Dis_5fold_item', 'new_last-fm', 'new_amazon-book', 'new_alibaba-fashion'}:
+        if  data_folder in {
+            'new_last-fm',
+            'new_amazon-book',
+            'new_alibaba-fashion'
+        }:            
             self.item_set = self.cf_to_item_set(self.all_cf)
             self.facts_cf, self.train_cf = self.generate_inductive_train(self.all_cf)
         else:
