@@ -9,9 +9,10 @@ from scipy.sparse import csr_matrix
 import numpy as np
 
 class DataLoader:
-    def __init__(self, task_dir):
+    def __init__(self, task_dir, device='cuda' if torch.cuda.is_available() else 'cpu'):
         self.task_dir = task_dir
-      
+        self.device = device
+        
         if  task_dir == 'data/Dis_5fold_user/' or task_dir == 'data/Dis_5fold_item/' or  task_dir == 'data/new_last-fm/'or  task_dir == 'data/new_amazon-book/'or  task_dir == 'data/new_alibaba-fashion/':
             self.all_cf = self.read_cf(self.task_dir + 'train_1.txt')  # all_cf  (np.array)
             self.test_cf = self.read_cf(self.task_dir + 'test_1.txt')
@@ -241,7 +242,7 @@ class DataLoader:
         self.M_sub = csr_matrix(
             (np.ones((self.n_fact,)), # values to be placed in the sparse matrix
              (np.arange(self.n_fact), self.KG[:,0])), # row indices, column indices
-            shape=(self.n_fact, self.n_nodes))
+            shape=(self.n_fact, self.n_nodes)) # facts and its head nodes
 
     def load_test_graph(self, triples):  
         idd = np.concatenate([np.expand_dims(np.arange(self.n_nodes),1), (2*self.n_rel+2)*np.ones((self.n_nodes, 1)), np.expand_dims(np.arange(self.n_nodes),1)], 1)
@@ -295,22 +296,30 @@ class DataLoader:
         
         if mode=='train':
             KG = self.KG
-            M_sub = self.M_sub
+            M_sub = self.M_sub # (n_edges, n_nodes) (edges and its one-hot head nodes )
         else:
             KG = self.tKG
             M_sub = self.tM_sub
         
         # nodes: n(node) x 2 with (batch_idx, node_idx)
-        node_1hot = csr_matrix((np.ones(len(nodes)), (nodes[:,1], nodes[:,0])), shape=(self.n_nodes, nodes.shape[0]))
-        edge_1hot = M_sub.dot(node_1hot)
-        edges = np.nonzero(edge_1hot)
-        sampled_edges = np.concatenate([np.expand_dims(edges[1],1), KG[edges[0]]], axis=1)     # (batch_idx, head, rela, tail)
-        sampled_edges = torch.LongTensor(sampled_edges).cuda()
+        node_1hot = csr_matrix(
+            (np.ones(len(nodes)), (nodes[:,1], nodes[:,0])), 
+            shape=(self.n_nodes, nodes.shape[0])
+        ) # [n_nodes x batch_size]
+        edge_1hot = M_sub.dot(node_1hot) # [n_edges x batch_size] (edges and the batch they belong to)
+        edges = np.nonzero(edge_1hot) # tuple (edge_idx, batch_idx) (indices of non-zero rows, cols)
+        sampled_edges = np.concatenate(
+            [np.expand_dims(edges[1],1), KG[edges[0]]],
+            axis=1
+        )     # (batch_idx, head, rela, tail)
+        sampled_edges = torch.LongTensor(sampled_edges).to(self.device)
 
         # index to nodes
+        # head_nodes: tuple of unique (batch_idx, head_node); head_index: index of head_nodes in sampled_edges
         head_nodes, head_index = torch.unique(sampled_edges[:,[0,1]], dim=0, sorted=True, return_inverse=True)
         tail_nodes, tail_index = torch.unique(sampled_edges[:,[0,3]], dim=0, sorted=True, return_inverse=True)
 
+        # 
         sampled_edges = torch.cat([sampled_edges, head_index.unsqueeze(1), tail_index.unsqueeze(1)], 1)
        
         mask = sampled_edges[:,2] == (self.n_rel*2 + 2)
@@ -323,7 +332,7 @@ class DataLoader:
         if data=='train':                                   
             query, answer, wrongs = np.array(self.train_q), self.train_a, self.train_w
         if data=='test':
-            query, answer = np.array(self.test_q), np.array(self.test_a)
+            query, answer = np.array(self.test_q), self.test_a
 
         subs = []
         rels = []

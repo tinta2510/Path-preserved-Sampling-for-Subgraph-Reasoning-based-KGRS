@@ -33,7 +33,8 @@ if __name__ == '__main__':
     opts = Options()
     opts.perf_file = os.path.join(results_dir,  dataset + '_perf.txt')
 
-    torch.cuda.set_device(args.gpu)
+    if torch.cuda.is_available():   
+        torch.cuda.set_device(args.gpu)
 
     loader = DataLoader(args.data_path)
     opts.n_ent = loader.n_ent

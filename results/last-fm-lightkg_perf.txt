@@ -1,0 +1,6 @@
+K: 30, lr: 0.0004, decay_rate: 0.994, lamb: 0.00014, hidden_dim: 48, attn_dim: 5, n_layer: 3, n_batch: 30, dropout: 0.02, act: idd
+K: 30, lr: 0.0004, decay_rate: 0.994, lamb: 0.00014, hidden_dim: 48, attn_dim: 5, n_layer: 3, n_batch: 30, dropout: 0.02, act: idd
+K: 30, lr: 0.0004, decay_rate: 0.994, lamb: 0.00014, hidden_dim: 48, attn_dim: 5, n_layer: 3, n_batch: 30, dropout: 0.02, act: idd
+K: 30, lr: 0.0004, decay_rate: 0.994, lamb: 0.00014, hidden_dim: 48, attn_dim: 5, n_layer: 3, n_batch: 30, dropout: 0.02, act: idd
+K: 30, lr: 0.0004, decay_rate: 0.994, lamb: 0.00014, hidden_dim: 48, attn_dim: 5, n_layer: 3, n_batch: 30, dropout: 0.02, act: idd
+K: 30, lr: 0.0004, decay_rate: 0.994, lamb: 0.00014, hidden_dim: 48, attn_dim: 5, n_layer: 3, n_batch: 30, dropout: 0.02, act: idd
