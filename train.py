@@ -44,11 +44,10 @@ if __name__ == '__main__':
     opts.n_nodes = loader.n_nodes
 
     if dataset in ['last-fm-lightkg', 'last-fm']:
-        opts.lr = 0.0004
+        opts.lr = 0.0005
         opts.decay_rate = 0.994
         opts.lamb = 0.00014
-        opts.hidden_dim = 48
-        opts.attn_dim = 5
+        opts.hidden_dim = 64
         opts.n_layer = 3
         opts.dropout = 0.02
         opts.act = 'idd'
@@ -57,12 +56,12 @@ if __name__ == '__main__':
         opts.use_full_pna = True
         opts.PNA_delta = None
         opts.Gumbel_tau = 1.1
-        opts.K = 30
+        opts.K = 60
     else:
         raise NotImplemented("No hyper-parameters for this dataset!")
 
     # config_str = '%d,%.6f, %.4f, %.6f,  %d, %d, %d, %d, %.4f,%s\n' % (opts.K,opts.lr, opts.decay_rate, opts.lamb, opts.hidden_dim, opts.attn_dim, opts.n_layer, opts.n_batch, opts.dropout, opts.act)
-    config_str = f'K: {opts.K}, lr: {opts.lr}, decay_rate: {opts.decay_rate}, lamb: {opts.lamb}, hidden_dim: {opts.hidden_dim}, attn_dim: {opts.attn_dim}, n_layer: {opts.n_layer}, n_batch: {opts.n_batch}, dropout: {opts.dropout}, act: {opts.act}\n'
+    config_str = f'K: {opts.K}, lr: {opts.lr}, decay_rate: {opts.decay_rate}, lamb: {opts.lamb}, hidden_dim: {opts.hidden_dim}, n_layer: {opts.n_layer}, n_batch: {opts.n_batch}, dropout: {opts.dropout}, act: {opts.act}\n'
     print(config_str)
     with open(opts.perf_file, 'a+') as f:
         f.write(config_str)

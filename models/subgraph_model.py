@@ -222,6 +222,7 @@ class AdaptiveSubgraphModel(torch.nn.Module):
         PNA_delta = getattr(params, "PNA_delta", None)
         Gumbel_tau = getattr(params, "Gumbel_tau", None)
         K = getattr(params, "K", 50)
+        print("Config - use_full_pna:", use_full_pna, " PNA_delta:", PNA_delta, " Gumbel_tau:", Gumbel_tau, " K:", K)
 
         # Stack per-layer AdaptiveSubgraphLayer modules
         layers = []

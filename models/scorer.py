@@ -51,7 +51,8 @@ class GumbelNodeScorer(nn.Module):
         if self.training:
             # Sample Gumbel noise
             uniform = torch.rand_like(s)
-            g = -torch.log(-torch.log(uniform.clamp(min=1e-10)).clamp(min=1e-10))
+            uniform = uniform.clamp(min=1e-6, max=1 - 1e-6)
+            g = -torch.log(-torch.log(uniform))
             logits = (s + g) / self.tau
             alpha = torch.sigmoid(logits)
         else:
