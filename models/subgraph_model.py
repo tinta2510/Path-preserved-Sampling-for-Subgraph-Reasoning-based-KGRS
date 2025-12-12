@@ -4,7 +4,7 @@ from torch_scatter import scatter
 
 from message import GRUMessageFunction
 from aggregator import FullPNAAggregator, SimplifiedPNAAggregator
-from pruner import GumbelNodePruner
+from models.scorer import GumbelNodeScorer
 
 class AdaptiveSubgraphLayer(nn.Module):
     """
@@ -24,12 +24,11 @@ class AdaptiveSubgraphLayer(nn.Module):
         n_item,
         n_rel,
         n_node,
-        pruner_hidden_dim=64,
         use_full_pna=True,
         act=lambda x: x,
         PNA_delta=None,
         Gumbel_tau=None,
-        Gumbel_threshold=None,
+        K=50,
     ):
         super().__init__()
         self.n_user = n_user
@@ -38,7 +37,8 @@ class AdaptiveSubgraphLayer(nn.Module):
         self.n_node = n_node
         self.node_dim = node_dim
         self.act = act
-
+        self.K = K
+        
         # Relation embeddings (dimension = node_dim)
         self.rela_embed = nn.Embedding(2 * n_rel + 1 + 2, node_dim)
 
@@ -48,13 +48,14 @@ class AdaptiveSubgraphLayer(nn.Module):
             self.aggregator = FullPNAAggregator(node_dim=node_dim, delta=PNA_delta)
         else:
             self.aggregator = SimplifiedPNAAggregator(node_dim=node_dim)
-        self.pruner = GumbelNodePruner(
+        self.scorer = GumbelNodeScorer(
             user_dim=node_dim,
             node_dim=node_dim,
-            hidden_dim=pruner_hidden_dim,
+            tau=Gumbel_tau
         )
 
-    def forward(self, q_sub, q_rel, hidden, edges, nodes, id_layer, n_layer, old_nodes_new_idx):
+    def forward(self, q_sub, q_rel, hidden, edges, nodes,
+                id_layer, n_layer, old_nodes_new_idx):
         """
         Args:
             q_sub:   [B]         user ids for each query in the batch
@@ -65,44 +66,18 @@ class AdaptiveSubgraphLayer(nn.Module):
             id_layer: int        current layer index
             n_layer: int         total number of layers
             old_nodes_new_idx: [N_prev] mapping from previous-layer node index
-                               to new-layer node index (built via self-loops)
+                            to new-layer node index (built via self-loops)
 
         Returns:
-            hidden_new:        [N,D] node states for this layer after gating
-            nodes:             [N,2] (possibly modified for last layer)
+            hidden_new:        [N_kept,D] node states for this layer after gating
+            nodes:             [N_kept,2] (pruned node set; last layer = items only)
             final_nodes:       [M,2] nodes used for scoring on the last layer
             old_nodes_new_idx: unchanged mapping (for caller bookkeeping)
-            sampled_nodes_idx: [N] boolean mask of nodes kept for h0
-            alpha:             [N] node-wise gates α_z
-            edges:             [E,6] (possibly filtered on last layer)
+            sampled_nodes_idx: [N] boolean mask over the *input* nodes before pruning
+            alpha:             [N] node-wise gates α_z (before pruning)
+            edges:             [E,6] unchanged (not used by later layers)
         """
         device = hidden.device
-
-        # By default, we keep all nodes for GRU state propagation
-        sampled_nodes_idx = torch.ones(nodes.size(0), dtype=torch.bool, device=device)
-
-        # ---- Last layer: keep only item nodes/edges for scoring ----
-        if id_layer == n_layer - 1:
-            sampled_nodes_idx = (
-                torch.gt(nodes[:, 1], self.n_user - 1)
-                & torch.lt(nodes[:, 1], self.n_user + self.n_item)
-            )
-
-            item_tail_index = (
-                torch.gt(edges[:, 3], self.n_user - 1)
-                & torch.lt(edges[:, 3], self.n_user + self.n_item)
-            )
-            edges = edges[item_tail_index]
-            if edges.numel() == 0:
-               raise ValueError("No items found in the subgraph at the last layer.")
-            else:
-                nodes, tail_index = torch.unique(
-                    edges[:, [0, 3]], dim=0, sorted=True, return_inverse=True
-                )
-                edges = torch.cat([edges[:, 0:5], tail_index.unsqueeze(1)], dim=1)
-                final_nodes = nodes
-        else:
-            final_nodes = torch.tensor([0], device=device)
 
         # ---- Edge indexing wrt previous & current node sets ----
         sub = edges[:, 4]  # previous-layer node index
@@ -110,8 +85,8 @@ class AdaptiveSubgraphLayer(nn.Module):
         obj = edges[:, 5]  # current-layer node index
 
         # 1) GRU-based message computation
-        hs = hidden[sub]          # [E, D]
-        hr = self.rela_embed(rel) # [E, D]
+        hs = hidden[sub]           # [E, D]
+        hr = self.rela_embed(rel)  # [E, D]
         messages = self.message_fn(h_src=hs, rel_emb=hr)  # [E, D]
 
         # 2) Align prev node states with current node set via self-loops
@@ -129,24 +104,102 @@ class AdaptiveSubgraphLayer(nn.Module):
 
         # 4) Build user representations h_u from user-type nodes
         B = q_sub.size(0)
+        node_batch = nodes[:, 0].long()      # [N]
+        node_ent   = nodes[:, 1].long()      # [N]
         h_user = torch.zeros(B, D, device=device)
-        node_batch = nodes[:, 0].long()  # [N]
 
         for b in range(B):
-            mask = (node_batch == b) & (nodes[:, 1] < self.n_user)
-            if mask.any():
-                h_user[b] = h_tilde[mask].mean(dim=0)
+            center_uid = q_sub[b].item()
+            # center user node for this query
+            center_mask = (node_batch == b) & (node_ent == center_uid)
 
-        # 5) Gumbel-sigmoid node gating
-        alpha, h_gated = self.pruner(
+            if center_mask.any():
+                # there should normally be exactly one; take the first
+                h_user[b] = h_tilde[center_mask][0]
+            else:
+                raise ValueError(
+                    f"Center user node (batch {b}, user {center_uid}) not found in current nodes."
+                )
+                    
+        # 5) Gumbel-sigmoid node gating (feature-level)
+        alpha, h_gated = self.scorer(
             h_user=h_user,
             h_node=h_tilde,
             node_batch=node_batch,
         )
 
-        hidden_new = self.act(h_gated)
+        hidden_all = self.act(h_gated)   # [N, D]
 
-        return hidden_new, nodes, final_nodes, old_nodes_new_idx, sampled_nodes_idx, alpha, edges
+        # ==================================================================
+        # 6) AdaProp-style INCREMENTAL SAMPLING using alpha as score
+        # ==================================================================
+        N = nodes.size(0)
+        keep_mask = torch.zeros(N, dtype=torch.bool, device=device)
+
+        # (a) always keep previously selected nodes V^{l-1}
+        keep_mask[old_nodes_new_idx] = True
+
+        # (b) identify newly-visited nodes as candidates:
+        #     CAND = N(V^{l-1}) \ V^{l-1}
+        diff_mask = torch.ones(N, dtype=torch.bool, device=device)
+        diff_mask[old_nodes_new_idx] = False      # True only for "new" nodes
+        candidate_idx = diff_mask.nonzero(as_tuple=False).squeeze(-1)
+
+        # If we are NOT at the last layer and have a top_k budget, sample;
+        # for the last layer we can skip sampling and keep all (then filter items).
+        if (
+            self.K is not None
+            and self.K > 0
+            and candidate_idx.numel() > 0
+            and id_layer < n_layer - 1
+        ):
+            cand_batch = node_batch[candidate_idx]   # [num_cand]
+            cand_alpha = alpha[candidate_idx]        # [num_cand]
+
+            # sample independently per query in the batch
+            for b in range(B):
+                mask_b = cand_batch == b
+                idx_b = candidate_idx[mask_b]
+                if idx_b.numel() == 0:
+                    continue
+
+                if idx_b.numel() <= self.K:
+                    # fewer than K: keep all
+                    keep_mask[idx_b] = True
+                else:
+                    # take top-k by alpha (higher gate = more relevant)
+                    _, top_pos = torch.topk(cand_alpha[mask_b], k=self.K)
+                    chosen_idx = idx_b[top_pos]
+                    keep_mask[chosen_idx] = True
+        else:
+            # no structural sampling: keep all nodes in this layer
+            keep_mask[:] = True
+
+        # (c) for the LAST layer, restrict to item-type nodes only
+        if id_layer == n_layer - 1:
+            is_item = (nodes[:, 1] >= self.n_user) & (
+                nodes[:, 1] < self.n_user + self.n_item
+            )
+            keep_mask &= is_item
+            final_nodes = nodes[keep_mask]
+        else:
+            final_nodes = None
+
+        sampled_nodes_idx = keep_mask.clone()
+
+        # apply structural pruning
+        hidden_new = hidden_all[keep_mask]   # [N_kept, D]
+        nodes_new = nodes[keep_mask]         # [N_kept, 2]
+
+        return (
+            hidden_new,
+            nodes_new,
+            final_nodes,
+            old_nodes_new_idx,
+            sampled_nodes_idx,
+            alpha,
+            edges,
+        )
     
 class AdaptiveSubgraphModel(torch.nn.Module):
     def __init__(self, params, loader):
@@ -162,11 +215,10 @@ class AdaptiveSubgraphModel(torch.nn.Module):
         acts = {"relu": nn.ReLU(), "tanh": torch.tanh, "idd": lambda x: x}
         act = acts[params.act]
 
-        pruner_hidden_dim = getattr(params, "pruner_hidden_dim", self.hidden_dim // 2)
         use_full_pna = getattr(params, "use_full_pna", True)
         PNA_delta = getattr(params, "PNA_delta", None)
         Gumbel_tau = getattr(params, "Gumbel_tau", None)
-        Gumbel_threshold = getattr(params, "Gumbel_threshold", None)
+        K = getattr(params, "K", 50)
 
         # Stack per-layer AdaptiveSubgraphLayer modules
         layers = []
@@ -178,12 +230,11 @@ class AdaptiveSubgraphModel(torch.nn.Module):
                     n_item=self.n_items,
                     n_rel=self.n_rel,
                     n_node=self.n_nodes,
-                    pruner_hidden_dim=pruner_hidden_dim,
                     use_full_pna=use_full_pna,
                     act=act,
                     PNA_delta=PNA_delta,
                     Gumbel_tau=Gumbel_tau,
-                    Gumbel_threshold=Gumbel_threshold,
+                    K=K,
                 )
             )
         self.gnn_layers = nn.ModuleList(layers)

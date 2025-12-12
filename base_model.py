@@ -54,7 +54,7 @@ class BaseModel(object):
             batch_idx = np.arange(start, end)
             subs, rels, pos, neg = self.loader.get_batch(batch_idx)
 
-            self.model.zero_grad()
+            self.optimizer.zero_grad()
             scores = self.model(subs, rels) 
            
             loss = cal_bpr_loss(self.n_users, pos, neg, scores)

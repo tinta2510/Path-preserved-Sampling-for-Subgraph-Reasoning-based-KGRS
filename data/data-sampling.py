@@ -2,8 +2,13 @@ import os
 import numpy as np
 from collections import Counter, defaultdict
 
-DATA_DIR = 'data/last-fm/'
-OUT_DIR = 'data/last-fm-subset/'
+
+NUM_USERS = 3000
+NUM_ITEMS = 6000
+
+
+DATA_DIR = './data/last-fm/'
+OUT_DIR = './data/last-fm-subset/'
 os.makedirs(OUT_DIR, exist_ok=True)
 
 # 1. Read user-item interactions
@@ -57,8 +62,8 @@ item_counts = Counter(all_cf[:,1])
 user_ids = list(user_counts.keys())
 item_ids = list(item_counts.keys())
 
-sampled_users = bin_and_sample(user_ids, user_counts, n_bins=10, n_total=1500)
-sampled_items = bin_and_sample(item_ids, item_counts, n_bins=10, n_total=3000)
+sampled_users = bin_and_sample(user_ids, user_counts, n_bins=10, n_total=NUM_USERS)
+sampled_items = bin_and_sample(item_ids, item_counts, n_bins=10, n_total=NUM_ITEMS)
 
 user_map = {u: idx for idx, u in enumerate(sorted(sampled_users))}
 item_map = {i: idx for idx, i in enumerate(sorted(sampled_items))}
