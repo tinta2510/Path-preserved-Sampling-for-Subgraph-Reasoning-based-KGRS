@@ -43,4 +43,4 @@ def summarize(data_dir):
     print(f"Triplets: {num_triplets}")
 
 # Example usage:
-summarize('data/last-fm-subset')
+summarize('data/last-fm-lightkg')

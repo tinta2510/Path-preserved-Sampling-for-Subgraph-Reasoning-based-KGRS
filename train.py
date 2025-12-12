@@ -42,7 +42,7 @@ if __name__ == '__main__':
     opts.n_items = loader.n_items
     opts.n_nodes = loader.n_nodes
 
-    if dataset in ['last-fm-subset', 'last-fm']:
+    if dataset in ['last-fm-lightkg', 'last-fm']:
         opts.lr = 0.0004
         opts.decay_rate = 0.994
         opts.lamb = 0.00014
