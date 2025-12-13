@@ -19,7 +19,7 @@ def sample_space():
         "n_layer": random.choice([3, 4]),
         "dropout": random.uniform(0.0, 0.2),
         "Gumbel_tau": random.uniform(0.8, 1.5),
-        "K": random.choice([60, 70, 80]),
+        "K": random.choice([70, 90, 110]),
         "lamb": sample_log_uniform(5e-5, 1e-3),
         "item_bonus": random.uniform(0.0, 0.1),
     }
