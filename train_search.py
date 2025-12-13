@@ -25,7 +25,7 @@ parser.add_argument('--use_full_pna', action='store_true')
 parser.add_argument('--PNA_delta', type=float, default=None)
 parser.add_argument('--Gumbel_tau', type=float, default=None)
 parser.add_argument('--K', type=int, default=None)
-
+parser.add_argument('--item_bonus', type=float, default=None)
 args = parser.parse_args()
 
 class Options(object):
@@ -72,9 +72,12 @@ if __name__ == '__main__':
     opts.PNA_delta = args.PNA_delta if args.PNA_delta is not None else None
     opts.Gumbel_tau = args.Gumbel_tau if args.Gumbel_tau is not None else 1.1
     opts.K = args.K if args.K is not None else 60
+    opts.item_bonus = args.item_bonus if args.item_bonus is not None else 0.05
 
     # config_str = '%d,%.6f, %.4f, %.6f,  %d, %d, %d, %d, %.4f,%s\n' % (opts.K,opts.lr, opts.decay_rate, opts.lamb, opts.hidden_dim, opts.attn_dim, opts.n_layer, opts.n_batch, opts.dropout, opts.act)
-    config_str = f'K: {opts.K}, lr: {opts.lr}, decay_rate: {opts.decay_rate}, lamb: {opts.lamb}, hidden_dim: {opts.hidden_dim}, n_layer: {opts.n_layer}, n_batch: {opts.n_batch}, dropout: {opts.dropout}, act: {opts.act}\n'
+    config_str = f'''K: {opts.K}, lr: {opts.lr}, decay_rate: {opts.decay_rate}, lamb: {opts.lamb}, hidden_dim: {opts.hidden_dim}, 
+                    n_layer: {opts.n_layer}, n_batch: {opts.n_batch}, dropout: {opts.dropout}, act: {opts.act}, item_bonus: {opts.item_bonus}\n'''
+                    
     print(config_str)
     with open(opts.perf_file, 'a+') as f:
         f.write(config_str)
@@ -82,7 +85,7 @@ if __name__ == '__main__':
     model = BaseModel(opts, loader)
 
     best_recall = 0
-    for epoch in range(5):
+    for epoch in range(2):
     
         print('epoch ',epoch)
         recall,ndcg, out_str = model.train_batch()

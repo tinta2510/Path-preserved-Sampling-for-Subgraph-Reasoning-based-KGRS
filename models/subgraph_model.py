@@ -29,6 +29,7 @@ class AdaptiveSubgraphLayer(nn.Module):
         PNA_delta=None,
         Gumbel_tau=None,
         K=50,
+        item_bonus=0.05,
         device='cuda' if torch.cuda.is_available() else 'cpu',
     ):
         super().__init__()
@@ -39,6 +40,7 @@ class AdaptiveSubgraphLayer(nn.Module):
         self.node_dim = node_dim
         self.act = act
         self.K = K
+        self.item_bonus = item_bonus
         self.device = device
         
         # Relation embeddings (dimension = node_dim)
@@ -158,6 +160,13 @@ class AdaptiveSubgraphLayer(nn.Module):
             cand_batch = node_batch[candidate_idx]   # [num_cand]
             cand_alpha = alpha[candidate_idx]        # [num_cand]
 
+
+            cand_node_ids = nodes[candidate_idx, 1]  # [num_cand]
+            cand_is_item = (cand_node_ids >= self.n_user) & (cand_node_ids < self.n_user + self.n_item)
+            cand_item_bonus = cand_is_item.float() *  self.item_bonus
+            cand_alpha = cand_alpha + cand_item_bonus  # boost item node scores
+
+
             # sample independently per query in the batch
             for b in range(B):
                 mask_b = cand_batch == b
@@ -222,7 +231,9 @@ class AdaptiveSubgraphModel(torch.nn.Module):
         PNA_delta = getattr(params, "PNA_delta", None)
         Gumbel_tau = getattr(params, "Gumbel_tau", None)
         K = getattr(params, "K", 50)
-        print("Config - use_full_pna:", use_full_pna, " PNA_delta:", PNA_delta, " Gumbel_tau:", Gumbel_tau, " K:", K)
+        item_bonus = getattr(params, "item_bonus", 0.05)
+        print("Config - use_full_pna:", use_full_pna, " PNA_delta:", PNA_delta, " Gumbel_tau:", Gumbel_tau, 
+              " K:", K, " item_bonus:", item_bonus)
 
         # Stack per-layer AdaptiveSubgraphLayer modules
         layers = []
@@ -239,6 +250,7 @@ class AdaptiveSubgraphModel(torch.nn.Module):
                     PNA_delta=PNA_delta,
                     Gumbel_tau=Gumbel_tau,
                     K=K,
+                    item_bonus=item_bonus,
                     device=self.device,
                 )
             )
