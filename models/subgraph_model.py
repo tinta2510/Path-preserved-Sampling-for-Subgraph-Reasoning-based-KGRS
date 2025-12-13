@@ -6,9 +6,80 @@ from .message import GRUMessageFunction
 from .aggregator import FullPNAAggregator, SimplifiedPNAAggregator
 from .scorer import GumbelNodeScorer
 
+# ################# HYPERBOLIC OPERATIONS ########################
+MIN_NORM = 1e-15
+BALL_EPS = {torch.float32: 4e-3, torch.float64: 1e-5}
+
+class Artanh(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, x):
+        x = x.clamp(-1 + 1e-5, 1 - 1e-5)
+        ctx.save_for_backward(x)
+        dtype = x.dtype
+        x = x.double()
+        return (torch.log_(1 + x).sub_(torch.log_(1 - x))).mul_(0.5).to(dtype)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        input, = ctx.saved_tensors
+        return grad_output / (1 - input ** 2)
+
+def artanh(x):
+    return Artanh.apply(x)
+
+def tanh(x):
+    return x.clamp(-15, 15).tanh()
+
+def expmap0(u, c=1):
+    """Exponential map at origin: tangent space -> hyperbolic space"""
+    sqrt_c = c ** 0.5
+    u_norm = u.norm(dim=-1, p=2, keepdim=True).clamp_min(MIN_NORM)
+    gamma_1 = tanh(sqrt_c * u_norm) * u / (sqrt_c * u_norm)
+    return project(gamma_1, c)
+
+def logmap0(y, c=1):
+    """Logarithmic map at origin: hyperbolic space -> tangent space"""
+    sqrt_c = c ** 0.5
+    y_norm = y.norm(dim=-1, p=2, keepdim=True).clamp_min(MIN_NORM)
+    return y / y_norm / sqrt_c * artanh(sqrt_c * y_norm)
+
+def project(x, c=1):
+    """Project points to Poincare ball"""
+    norm = x.norm(dim=-1, p=2, keepdim=True).clamp_min(MIN_NORM)
+    eps = BALL_EPS[x.dtype]
+    maxnorm = (1 - eps) / (c ** 0.5)
+    cond = norm > maxnorm
+    projected = x / norm * maxnorm
+    return torch.where(cond, projected, x)
+
+def mobius_add(x, y, c=1):
+    """Mobius addition in Poincare ball"""
+    x2 = torch.sum(x * x, dim=-1, keepdim=True)
+    y2 = torch.sum(y * y, dim=-1, keepdim=True)
+    xy = torch.sum(x * y, dim=-1, keepdim=True)
+    num = (1 + 2 * c * xy + c * y2) * x + (1 - c * x2) * y
+    denom = 1 + 2 * c * xy + c ** 2 * x2 * y2
+    return num / denom.clamp_min(MIN_NORM)
+
+def hyp_distance(x, y, c=1):
+    """Hyperbolic distance in Poincare ball"""
+    sqrt_c = c ** 0.5
+    x2 = torch.sum(x * x, dim=-1, keepdim=True)
+    y2 = torch.sum(y * y, dim=-1, keepdim=True)
+    xy = torch.sum(x * y, dim=-1, keepdim=True)
+    c1 = 1 - 2 * c * xy + c * y2
+    c2 = 1 - c * x2
+    num = torch.sqrt((c1 ** 2) * x2 + (c2 ** 2) * y2 - (2 * c1 * c2) * xy)
+    denom = 1 - 2 * c * xy + c ** 2 * x2 * y2
+    pairwise_norm = num / denom.clamp_min(MIN_NORM)
+    dist = artanh(sqrt_c * pairwise_norm)
+    return 2 * dist / sqrt_c
+
+# ################################################################
+
 class AdaptiveSubgraphLayer(nn.Module):
     """
-    One message-passing layer for user-centric subgraph reasoning.
+    One message-passing layer for user-centric subgraph reasoning with hyperbolic embeddings.
 
     This layer:
       - computes edge messages with a GRU-based message function,
@@ -29,6 +100,7 @@ class AdaptiveSubgraphLayer(nn.Module):
         PNA_delta=None,
         Gumbel_tau=None,
         K=50,
+        c=1.0,
         device='cuda' if torch.cuda.is_available() else 'cpu',
     ):
         super().__init__()
@@ -40,8 +112,9 @@ class AdaptiveSubgraphLayer(nn.Module):
         self.act = act
         self.K = K
         self.device = device
-        
-        # Relation embeddings (dimension = node_dim)
+        self.c = c  # Hyperbolic curvature
+
+        # Relation embeddings (initialized in tangent space)
         self.rela_embed = nn.Embedding(2 * n_rel + 1 + 2, node_dim)
 
         # Per-layer message, aggregation, pruning modules
@@ -59,6 +132,9 @@ class AdaptiveSubgraphLayer(nn.Module):
     def forward(self, q_sub, q_rel, hidden, edges, nodes,
                 id_layer, n_layer, old_nodes_new_idx):
         """
+        Forward pass with hyperbolic message passing.
+        hidden is expected to be in tangent space.
+
         Args:
             q_sub:   [B]         user ids for each query in the batch
             q_rel:   [B]         query relation ids (currently unused here)
@@ -86,10 +162,19 @@ class AdaptiveSubgraphLayer(nn.Module):
         rel = edges[:, 2]  # relation id
         obj = edges[:, 5]  # current-layer node index
 
-        # 1) GRU-based message computation
-        hs = hidden[sub]           # [E, D]
-        hr = self.rela_embed(rel)  # [E, D]
-        messages = self.message_fn(h_src=hs, rel_emb=hr)  # [E, D]
+        # 1) Get embeddings in tangent space and map to hyperbolic space
+        hs = hidden[sub]           # [E, D] - in tangent space
+        hr = self.rela_embed(rel)  # [E, D] - in tangent space
+        
+        # Map to hyperbolic space
+        hs_hyp = expmap0(hs, self.c)  # [E, D] - in hyperbolic space
+        hr_hyp = expmap0(hr, self.c)  # [E, D] - in hyperbolic space
+        
+        # Hyperbolic message computation: TransE in hyperbolic space
+        message_hyp = project(mobius_add(hs_hyp, hr_hyp, self.c), self.c)  # [E, D]
+        
+        # Map back to tangent space for aggregation
+        messages = logmap0(message_hyp, self.c)  # [E, D] - in tangent space
 
         # 2) Align prev node states with current node set via self-loops
         N = nodes.size(0)
@@ -97,7 +182,7 @@ class AdaptiveSubgraphLayer(nn.Module):
         h_prev_new = torch.zeros(N, D, device=self.device)
         h_prev_new.index_copy_(0, old_nodes_new_idx, hidden)
 
-        # 3) PNA-style aggregation
+        # 3) PNA-style aggregation (in tangent space)
         h_tilde = self.aggregator(
             messages=messages,
             dst_index=obj,
@@ -130,7 +215,9 @@ class AdaptiveSubgraphLayer(nn.Module):
             node_batch=node_batch,
         )
 
-        hidden_all = self.act(h_gated)   # [N, D]
+        # Apply activation in tangent space, then map to hyperbolic space
+        hidden_tangent = self.act(h_gated)   # [N, D] - tangent space
+        hidden_all = hidden_tangent  # Keep in tangent space for next layer
 
         # ==================================================================
         # 6) AdaProp-style INCREMENTAL SAMPLING using alpha as score
@@ -222,7 +309,8 @@ class AdaptiveSubgraphModel(torch.nn.Module):
         PNA_delta = getattr(params, "PNA_delta", None)
         Gumbel_tau = getattr(params, "Gumbel_tau", None)
         K = getattr(params, "K", 50)
-        print("Config - use_full_pna:", use_full_pna, " PNA_delta:", PNA_delta, " Gumbel_tau:", Gumbel_tau, " K:", K)
+        c = getattr(params, "c", 1.0)  # Hyperbolic curvature
+        print("Config - use_full_pna:", use_full_pna, " PNA_delta:", PNA_delta, " Gumbel_tau:", Gumbel_tau, " K:", K, " c:", c)
 
         # Stack per-layer AdaptiveSubgraphLayer modules
         layers = []
@@ -239,6 +327,7 @@ class AdaptiveSubgraphModel(torch.nn.Module):
                     PNA_delta=PNA_delta,
                     Gumbel_tau=Gumbel_tau,
                     K=K,
+                    c=c,
                     device=self.device,
                 )
             )
@@ -249,6 +338,9 @@ class AdaptiveSubgraphModel(torch.nn.Module):
 
     def forward(self, subs, rels, mode="train"):
         """
+        Forward pass with hyperbolic embeddings.
+        Returns item scores in Euclidean space.
+
         Args:
             subs: list / array of user ids
             rels: list / array of query relation ids (NOTE: currently unused here)
@@ -268,7 +360,7 @@ class AdaptiveSubgraphModel(torch.nn.Module):
             [torch.arange(n).unsqueeze(1).to(self.device), q_sub.unsqueeze(1)], dim=1
         )  # [n, 2]
 
-        # Initial hidden states (all zeros)
+        # Initial hidden states (all zeros in tangent space)
         hidden = torch.zeros(n, self.hidden_dim).to(self.device)
 
         final_nodes = None  # will be set on last layer
@@ -302,8 +394,8 @@ class AdaptiveSubgraphModel(torch.nn.Module):
 
             hidden = self.dropout(hidden)
 
-        # At this point, `hidden` and `final_nodes` correspond to last-layer nodes
-        # (items only, by design of AdaptiveSubgraphLayer's last layer).
+        # At this point, `hidden` is in tangent space
+        # For scoring, we can use it directly or optionally compute distances
         scores = self.W_final(hidden).squeeze(-1)  # [num_last_nodes]
 
         scores_all = torch.zeros((n, self.n_items)).to(self.device)

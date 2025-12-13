@@ -50,6 +50,7 @@ if __name__ == '__main__':
     opts.perf_file = os.path.join(results_dir,  dataset + '_perf.txt')
 
     if torch.cuda.is_available():   
+        print('use gpu')
         torch.cuda.set_device(args.gpu)
 
     loader = DataLoader(args.data_path)
