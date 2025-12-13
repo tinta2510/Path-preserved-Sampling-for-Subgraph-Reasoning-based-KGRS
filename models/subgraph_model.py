@@ -287,7 +287,7 @@ class AdaptiveSubgraphModel(torch.nn.Module):
         Returns:
             scores_all: [batch_size, n_items] tensor of item scores
         """
-        device = next(self.parameters()).device  
+        device = self.W_final.weight.device 
         n = len(subs)
 
         q_sub = torch.LongTensor(subs).to(device)
@@ -311,6 +311,7 @@ class AdaptiveSubgraphModel(torch.nn.Module):
             )
             nodes = nodes.to(device)
             edges = edges.to(device)
+            old_nodes_new_idx = old_nodes_new_idx.to(device)
             # One AdaptiveSubgraphLayer step
             (
                 hidden,
