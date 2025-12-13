@@ -12,7 +12,12 @@ from utils import *
 class BaseModel(object):
     def __init__(self, args, loader):
         self.model = AdaptiveSubgraphModel(args, loader)
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+         
+        if torch.cuda.device_count() > 1:
+            print("Using", torch.cuda.device_count(), "GPUs!")
+            model = torch.nn.DataParallel(model)
+         
         self.model.to(self.device)
 
         self.loader = loader
@@ -55,6 +60,8 @@ class BaseModel(object):
             subs, rels, pos, neg = self.loader.get_batch(batch_idx)
 
             self.optimizer.zero_grad()
+            subs = subs.to(self.device)
+            rels = rels.to(self.device)
             scores = self.model(subs, rels) 
            
             loss = cal_bpr_loss(self.n_users, pos, neg, scores)
@@ -128,6 +135,8 @@ class BaseModel(object):
             end = min(n_data, (id+1)*batch_size)
             batch_idx = np.arange(start, end)
             subs, rels, objs = self.loader.get_batch(batch_idx, data='test')
+            subs = subs.to(self.device)
+            rels = rels.to(self.device)
             scores = self.model(subs, rels, mode='test').data.cpu().numpy()
         
             batch_recall, batch_ndcg = 0, 0

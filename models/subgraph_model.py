@@ -30,7 +30,7 @@ class AdaptiveSubgraphLayer(nn.Module):
         Gumbel_tau=None,
         K=50,
         item_bonus=0.05,
-        device='cuda' if torch.cuda.is_available() else 'cpu',
+        device='cuda:0' if torch.cuda.is_available() else 'cpu',
     ):
         super().__init__()
         self.n_user = n_user
@@ -234,7 +234,7 @@ class AdaptiveSubgraphLayer(nn.Module):
         )
     
 class AdaptiveSubgraphModel(torch.nn.Module):
-    def __init__(self, params, loader, device='cuda' if torch.cuda.is_available() else 'cpu'):
+    def __init__(self, params, loader, device='cuda:0' if torch.cuda.is_available() else 'cpu'):
         super(AdaptiveSubgraphModel, self).__init__()
         self.n_layer = params.n_layer
         self.hidden_dim = params.hidden_dim
