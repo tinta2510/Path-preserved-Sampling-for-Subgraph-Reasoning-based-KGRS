@@ -59,6 +59,8 @@ class BaseModel(object):
             subs, rels, pos, neg = self.loader.get_batch(batch_idx)
 
             self.optimizer.zero_grad()
+            subs = torch.LongTensor(subs).to(self.device)
+            rels = torch.LongTensor(rels).to(self.device)
             scores = self.model(subs, rels) 
            
             loss = cal_bpr_loss(self.n_users, pos, neg, scores)
@@ -132,6 +134,8 @@ class BaseModel(object):
             end = min(n_data, (id+1)*batch_size)
             batch_idx = np.arange(start, end)
             subs, rels, objs = self.loader.get_batch(batch_idx, data='test')
+            subs = torch.LongTensor(subs).to(self.device)
+            rels = torch.LongTensor(rels).to(self.device)
             scores = self.model(subs, rels, mode='test').data.cpu().numpy()
         
             batch_recall, batch_ndcg = 0, 0

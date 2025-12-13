@@ -290,8 +290,10 @@ class AdaptiveSubgraphModel(torch.nn.Module):
         device = self.W_final.weight.device 
         n = len(subs)
 
-        q_sub = torch.LongTensor(subs).to(device)
-        q_rel = torch.LongTensor(rels).to(device)
+        # q_sub = torch.LongTensor(subs).to(device)
+        # q_rel = torch.LongTensor(rels).to(device)
+        q_sub = subs
+        q_rel = rels
 
         # Initial node set: one node per user (batch_idx, user_id)
         nodes = torch.cat(
