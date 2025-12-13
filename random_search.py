@@ -51,6 +51,7 @@ for trial in range(N_TRIALS):
         "--dropout", str(cfg["dropout"]),
         "--Gumbel_tau", str(cfg["Gumbel_tau"]),
         "--K", str(cfg["K"]),
+        "--item_bonus", str(cfg["item_bonus"]),
     ]
 
     start = time.time()
