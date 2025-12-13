@@ -62,8 +62,6 @@ class BaseModel(object):
             self.optimizer.zero_grad()
             subs = torch.as_tensor(subs, dtype=torch.long, device=self.device)
             rels = torch.as_tensor(rels, dtype=torch.long, device=self.device)
-            pos  = torch.as_tensor(pos,  dtype=torch.long, device=self.device)
-            neg  = torch.as_tensor(neg,  dtype=torch.long, device=self.device)
             scores = self.model(subs, rels) 
            
             loss = cal_bpr_loss(self.n_users, pos, neg, scores)
@@ -139,7 +137,6 @@ class BaseModel(object):
             subs, rels, objs = self.loader.get_batch(batch_idx, data='test')
             subs = torch.as_tensor(subs, dtype=torch.long, device=self.device)
             rels = torch.as_tensor(rels, dtype=torch.long, device=self.device)
-            objs = torch.as_tensor(objs, dtype=torch.float32, device=self.device)
             scores = self.model(subs, rels, mode='test').data.cpu().numpy()
         
             batch_recall, batch_ndcg = 0, 0
