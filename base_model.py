@@ -13,12 +13,11 @@ class BaseModel(object):
     def __init__(self, args, loader):
         self.model = AdaptiveSubgraphModel(args, loader)
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-         
+        self.model.to(self.device)
+
         if torch.cuda.device_count() > 1:
             print("Using", torch.cuda.device_count(), "GPUs!")
-            self.model = torch.nn.DataParallel(self.model, device_ids=list(range(torch.cuda.device_count())))
-         
-        self.model.to(self.device)
+            self.model = torch.nn.DataParallel(self.model, device_ids=[0, 1])
 
         self.loader = loader
         self.n_ent = loader.n_ent

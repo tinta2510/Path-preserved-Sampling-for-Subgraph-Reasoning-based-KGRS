@@ -30,7 +30,6 @@ class AdaptiveSubgraphLayer(nn.Module):
         Gumbel_tau=None,
         K=50,
         item_bonus=0.05,
-        device='cuda:0' if torch.cuda.is_available() else 'cpu',
     ):
         super().__init__()
         self.n_user = n_user
@@ -41,7 +40,6 @@ class AdaptiveSubgraphLayer(nn.Module):
         self.act = act
         self.K = K
         self.item_bonus = item_bonus
-        self.device = device
         
         # Relation embeddings (dimension = node_dim)
         self.rela_embed = nn.Embedding(2 * n_rel + 1 + 2, node_dim)
@@ -81,7 +79,7 @@ class AdaptiveSubgraphLayer(nn.Module):
             alpha:             [N] node-wise gates α_z (before pruning)
             edges:             [E,6] unchanged (not used by later layers)
         """
-        # device = hidden.device
+        device = hidden.device
 
         # ---- Edge indexing wrt previous & current node sets ----
         sub = edges[:, 4]  # previous-layer node index
@@ -96,7 +94,7 @@ class AdaptiveSubgraphLayer(nn.Module):
         # 2) Align prev node states with current node set via self-loops
         N = nodes.size(0)
         D = hidden.size(1)
-        h_prev_new = torch.zeros(N, D, device=self.device)
+        h_prev_new = torch.zeros(N, D, device=device)
         h_prev_new.index_copy_(0, old_nodes_new_idx, hidden)
 
         # 3) PNA-style aggregation
@@ -110,7 +108,7 @@ class AdaptiveSubgraphLayer(nn.Module):
         B = q_sub.size(0)
         node_batch = nodes[:, 0].long()      # [N]
         node_ent   = nodes[:, 1].long()      # [N]
-        h_user = torch.zeros(B, D, device=self.device)
+        h_user = torch.zeros(B, D, device=device)
 
         for b in range(B):
             center_uid = q_sub[b].item()
@@ -138,14 +136,14 @@ class AdaptiveSubgraphLayer(nn.Module):
         # 6) AdaProp-style INCREMENTAL SAMPLING using alpha as score
         # ==================================================================
         N = nodes.size(0)
-        keep_mask = torch.zeros(N, dtype=torch.bool, device=self.device)
+        keep_mask = torch.zeros(N, dtype=torch.bool, device=device)
 
         # (a) always keep previously selected nodes V^{l-1}
         keep_mask[old_nodes_new_idx] = True
 
         # (b) identify newly-visited nodes as candidates:
         #     CAND = N(V^{l-1}) \ V^{l-1}
-        diff_mask = torch.ones(N, dtype=torch.bool, device=self.device)
+        diff_mask = torch.ones(N, dtype=torch.bool, device=device)
         diff_mask[old_nodes_new_idx] = False      # True only for "new" nodes
         candidate_idx = diff_mask.nonzero(as_tuple=False).squeeze(-1)
 
@@ -192,7 +190,7 @@ class AdaptiveSubgraphLayer(nn.Module):
             B = q_sub.size(0)
             node_batch = nodes[:, 0].long()      # [N]
             node_ent   = nodes[:, 1].long()      # [N]
-            hidden_user = torch.zeros(B, D, device=self.device)
+            hidden_user = torch.zeros(B, D, device=device)
 
             for b in range(B):
                 center_uid = q_sub[b].item()
@@ -234,7 +232,7 @@ class AdaptiveSubgraphLayer(nn.Module):
         )
     
 class AdaptiveSubgraphModel(torch.nn.Module):
-    def __init__(self, params, loader, device='cuda:0' if torch.cuda.is_available() else 'cpu'):
+    def __init__(self, params, loader):
         super(AdaptiveSubgraphModel, self).__init__()
         self.n_layer = params.n_layer
         self.hidden_dim = params.hidden_dim
@@ -243,7 +241,6 @@ class AdaptiveSubgraphModel(torch.nn.Module):
         self.n_items = params.n_items
         self.n_nodes = params.n_nodes
         self.loader = loader
-        self.device = device
         
         acts = {"relu": nn.ReLU(), "tanh": torch.tanh, "idd": lambda x: x}
         act = acts[params.act]
@@ -271,8 +268,7 @@ class AdaptiveSubgraphModel(torch.nn.Module):
                     PNA_delta=PNA_delta,
                     Gumbel_tau=Gumbel_tau,
                     K=K,
-                    item_bonus=item_bonus,
-                    device=self.device,
+                    item_bonus=item_bonus
                 )
             )
         self.gnn_layers = nn.ModuleList(layers)
@@ -291,18 +287,19 @@ class AdaptiveSubgraphModel(torch.nn.Module):
         Returns:
             scores_all: [batch_size, n_items] tensor of item scores
         """
+        device = next(self.parameters()).device  
         n = len(subs)
 
-        q_sub = torch.LongTensor(subs).to(self.device)
-        q_rel = torch.LongTensor(rels).to(self.device)
+        q_sub = torch.LongTensor(subs).to(device)
+        q_rel = torch.LongTensor(rels).to(device)
 
         # Initial node set: one node per user (batch_idx, user_id)
         nodes = torch.cat(
-            [torch.arange(n).unsqueeze(1).to(self.device), q_sub.unsqueeze(1)], dim=1
+            [torch.arange(n).unsqueeze(1).to(device), q_sub.unsqueeze(1)], dim=1
         )  # [n, 2]
 
         # Initial hidden states (all zeros)
-        hidden = torch.zeros(n, self.hidden_dim).to(self.device)
+        hidden = torch.zeros(n, self.hidden_dim).to(device)
 
         final_nodes = None  # will be set on last layer
 
@@ -312,7 +309,8 @@ class AdaptiveSubgraphModel(torch.nn.Module):
             nodes, edges, old_nodes_new_idx = self.loader.get_neighbors(
                 nodes_np, mode=mode
             )
-
+            nodes = nodes.to(device)
+            edges = edges.to(device)
             # One AdaptiveSubgraphLayer step
             (
                 hidden,
@@ -342,7 +340,7 @@ class AdaptiveSubgraphModel(torch.nn.Module):
         pairs = torch.cat([h_users, hidden], dim=1)  # [num_last_nodes, 2D]
         scores = self.W_final(pairs).squeeze(-1)  # [num_last_nodes]
 
-        scores_all = torch.zeros((n, self.n_items)).to(self.device)
+        scores_all = torch.zeros((n, self.n_items)).to(device)
         scores_all[(final_nodes[:, 0], final_nodes[:, 1] - self.n_users)] = scores
 
         return scores_all
