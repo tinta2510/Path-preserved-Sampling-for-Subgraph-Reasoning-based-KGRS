@@ -106,7 +106,7 @@ class AdaptiveSubgraphLayer(nn.Module):
             h_prev=h_prev_new,
         )  # [N, D]
 
-        # 4) Build user representations h_u from user-type nodes
+        # 4) Get user representations of query users 
         B = q_sub.size(0)
         node_batch = nodes[:, 0].long()      # [N]
         node_ent   = nodes[:, 1].long()      # [N]
@@ -188,6 +188,25 @@ class AdaptiveSubgraphLayer(nn.Module):
 
         # (c) for the LAST layer, restrict to item-type nodes only
         if id_layer == n_layer - 1:
+            # Get query user representations for last layer for scoring 
+            B = q_sub.size(0)
+            node_batch = nodes[:, 0].long()      # [N]
+            node_ent   = nodes[:, 1].long()      # [N]
+            hidden_user = torch.zeros(B, D, device=self.device)
+
+            for b in range(B):
+                center_uid = q_sub[b].item()
+                # center user node for this query
+                center_mask = (node_batch == b) & (node_ent == center_uid)
+
+                if center_mask.any():
+                    # there should normally be exactly one; take the first
+                    hidden_user[b] = hidden_all[center_mask][0]
+                else:
+                    raise ValueError(
+                        f"Center user node (batch {b}, user {center_uid}) not found in current nodes."
+                    )            
+                
             is_item = (nodes[:, 1] >= self.n_user) & (
                 nodes[:, 1] < self.n_user + self.n_item
             )
@@ -195,6 +214,7 @@ class AdaptiveSubgraphLayer(nn.Module):
             final_nodes = nodes[keep_mask]
         else:
             final_nodes = None
+            hidden_user = None
 
         sampled_nodes_idx = keep_mask.clone()
 
@@ -206,6 +226,7 @@ class AdaptiveSubgraphLayer(nn.Module):
             hidden_new,
             nodes_new,
             final_nodes,
+            hidden_user, # Return user representations at last layer for scoring
             old_nodes_new_idx,
             sampled_nodes_idx,
             alpha,
@@ -257,7 +278,7 @@ class AdaptiveSubgraphModel(torch.nn.Module):
         self.gnn_layers = nn.ModuleList(layers)
 
         self.dropout = nn.Dropout(params.dropout)
-        self.W_final = nn.Linear(self.hidden_dim, 1, bias=False)  # get score
+        self.W_final = nn.Linear(self.hidden_dim * 2, 1, bias=False)  # get score
 
     def forward(self, subs, rels, mode="train"):
         """
@@ -297,6 +318,7 @@ class AdaptiveSubgraphModel(torch.nn.Module):
                 hidden,
                 nodes,
                 final_nodes,
+                hidden_user,
                 old_nodes_new_idx,
                 sampled_nodes_idx,
                 alpha,
@@ -316,7 +338,9 @@ class AdaptiveSubgraphModel(torch.nn.Module):
 
         # At this point, `hidden` and `final_nodes` correspond to last-layer nodes
         # (items only, by design of AdaptiveSubgraphLayer's last layer).
-        scores = self.W_final(hidden).squeeze(-1)  # [num_last_nodes]
+        h_users = hidden_user[final_nodes[:, 0]]  # [num_last_nodes, D]
+        pairs = torch.cat([h_users, hidden], dim=1)  # [num_last_nodes, 2D]
+        scores = self.W_final(pairs).squeeze(-1)  # [num_last_nodes]
 
         scores_all = torch.zeros((n, self.n_items)).to(self.device)
         scores_all[(final_nodes[:, 0], final_nodes[:, 1] - self.n_users)] = scores
