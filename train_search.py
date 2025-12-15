@@ -67,8 +67,8 @@ if __name__ == '__main__':
     opts.n_layer = args.n_layer if args.n_layer is not None else 3
     opts.dropout = args.dropout if args.dropout is not None else 0.02
     opts.act = args.act if args.act is not None else 'idd'
-    opts.n_batch = args.n_batch if args.n_batch is not None else 30
-    opts.n_tbatch = args.n_tbatch if args.n_tbatch is not None else 30
+    opts.n_batch = args.n_batch if args.n_batch is not None else (30 if opts.n_layer <=3 else 20)
+    opts.n_tbatch = args.n_tbatch if args.n_tbatch is not None else (30 if opts.n_layer <=3 else 20)
     opts.use_full_pna = args.use_full_pna if args.use_full_pna else True
     opts.PNA_delta = args.PNA_delta if args.PNA_delta is not None else None
     opts.Gumbel_tau = args.Gumbel_tau if args.Gumbel_tau is not None else 1.1
