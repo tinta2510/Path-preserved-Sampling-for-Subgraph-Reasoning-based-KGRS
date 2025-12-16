@@ -197,6 +197,7 @@ class DataLoader:
         return it_inkg
     
     def generate_inductive_train(self, cf):
+        print("Generating inductive training set...")
         # Use set for O(1) lookup and removal
         fcf_set = set(map(tuple, cf.tolist()))  # Convert to set of tuples
         n_train = 0
@@ -224,6 +225,7 @@ class DataLoader:
         fcf = np.array(list(fcf_set))
         train_cf = np.array(train_cf)
         
+        print(f"Inductive training set generated with {len(ind_item)} new items.")
         return fcf, train_cf
 
     def load_graph(self, triples):      
