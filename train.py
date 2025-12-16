@@ -81,7 +81,7 @@ if __name__ == '__main__':
         if recall > best_recall:
             best_recall = recall
             best_str = out_str
-            print(str(epoch) + '\t' + best_str)
+            print("[BEST]" + str(epoch) + '\t' + best_str)
     with open(opts.perf_file, 'a+') as f:
         f.write('best:\n'+best_str)
 
