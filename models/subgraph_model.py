@@ -25,7 +25,6 @@ class AdaptiveSubgraphLayer(nn.Module):
         n_rel,
         n_node,
         use_full_pna=True,
-        act=lambda x: x,
         PNA_delta=None,
         Gumbel_tau=None,
         K=50,
@@ -38,7 +37,6 @@ class AdaptiveSubgraphLayer(nn.Module):
         self.n_rel = n_rel
         self.n_node = n_node
         self.node_dim = node_dim
-        self.act = act
         self.K = K
         self.item_bonus = item_bonus
         self.device = device
@@ -125,14 +123,12 @@ class AdaptiveSubgraphLayer(nn.Module):
                     f"Center user node (batch {b}, user {center_uid}) not found in current nodes."
                 )
                     
-        # 5) Gumbel-sigmoid node gating (feature-level)
-        alpha, h_gated = self.scorer(
+        # 5) node gating (feature-level) - apply only to non-last layers
+        alpha, hidden_all = self.scorer(
             h_user=h_user,
             h_node=h_tilde,
             node_batch=node_batch,
         )
-
-        hidden_all = self.act(h_gated)   # [N, D]
 
         # ==================================================================
         # 6) AdaProp-style INCREMENTAL SAMPLING using alpha as score
@@ -244,9 +240,6 @@ class AdaptiveSubgraphModel(torch.nn.Module):
         self.n_nodes = params.n_nodes
         self.loader = loader
         self.device = device
-        
-        acts = {"relu": nn.ReLU(), "tanh": torch.tanh, "idd": lambda x: x}
-        act = acts[params.act]
 
         use_full_pna = getattr(params, "use_full_pna", True)
         PNA_delta = getattr(params, "PNA_delta", None)
@@ -267,7 +260,6 @@ class AdaptiveSubgraphModel(torch.nn.Module):
                     n_rel=self.n_rel,
                     n_node=self.n_nodes,
                     use_full_pna=use_full_pna,
-                    act=act,
                     PNA_delta=PNA_delta,
                     Gumbel_tau=Gumbel_tau,
                     K=K,

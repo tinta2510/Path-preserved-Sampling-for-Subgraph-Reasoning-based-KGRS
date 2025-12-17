@@ -3,12 +3,12 @@ import torch
 
 def cal_bpr_loss(n_users, pos, neg, scores):
  
-    n = scores.shape[0]
+    n = scores.shape[0] # number of users in the batch
     
     loss = 0
     for i in range(n):
-        pos_score = scores[i][pos[i]-n_users]
-        neg_score = scores[i][neg[i]-n_users]
+        pos_score = scores[i][pos[i]-n_users] # List of positive items for each userw
+        neg_score = scores[i][neg[i]-n_users] # List of sampled negative items for each user
         u_loss = -1*torch.sum(torch.nn.LogSigmoid()(pos_score - neg_score))
         loss += u_loss
 

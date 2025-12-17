@@ -281,9 +281,9 @@ class DataLoader:
         answers = []
         wrongs = []
         for key in pos_items:
-            queries.append(key)
-            answers.append(np.array(pos_items[key]))
-            wrongs.append(np.array(neg_items[key]))
+            queries.append(key) # Each query (h,r)
+            answers.append(np.array(pos_items[key])) # All positive items for (h,r)
+            wrongs.append(np.array(neg_items[key]))  # Sampled negative items for positive items for (h,r)
         
         return queries, answers, wrongs
 

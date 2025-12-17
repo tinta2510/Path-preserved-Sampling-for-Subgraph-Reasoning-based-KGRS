@@ -50,7 +50,6 @@ if __name__ == '__main__':
         opts.hidden_dim = 64
         opts.n_layer = 3
         opts.dropout = 0.02
-        opts.act = 'idd'
         opts.n_batch = 30
         opts.n_tbatch = 30
         opts.use_full_pna = True
@@ -62,7 +61,7 @@ if __name__ == '__main__':
         raise NotImplemented("No hyper-parameters for this dataset!")
 
     # config_str = '%d,%.6f, %.4f, %.6f,  %d, %d, %d, %d, %.4f,%s\n' % (opts.K,opts.lr, opts.decay_rate, opts.lamb, opts.hidden_dim, opts.attn_dim, opts.n_layer, opts.n_batch, opts.dropout, opts.act)
-    config_str = f'K: {opts.K}, lr: {opts.lr}, decay_rate: {opts.decay_rate}, lamb: {opts.lamb}, hidden_dim: {opts.hidden_dim}, n_layer: {opts.n_layer}, n_batch: {opts.n_batch}, dropout: {opts.dropout}, act: {opts.act}\n'
+    config_str = f'K: {opts.K}, lr: {opts.lr}, decay_rate: {opts.decay_rate}, lamb: {opts.lamb}, hidden_dim: {opts.hidden_dim}, n_layer: {opts.n_layer}, n_batch: {opts.n_batch}, dropout: {opts.dropout}\n'
     print(config_str)
     with open(opts.perf_file, 'a+') as f:
         f.write(config_str)

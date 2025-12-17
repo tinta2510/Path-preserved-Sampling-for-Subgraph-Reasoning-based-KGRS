@@ -48,15 +48,7 @@ class GumbelNodeScorer(nn.Module):
 
         s = self.scorer(x).squeeze(-1)  # [N]
 
-        if self.training:
-            # Sample Gumbel noise
-            uniform = torch.rand_like(s)
-            uniform = uniform.clamp(min=1e-6, max=1 - 1e-6)
-            g = -torch.log(-torch.log(uniform))
-            logits = (s + g) / self.tau
-            alpha = torch.sigmoid(logits)
-        else:
-            alpha = torch.sigmoid(s)
+        alpha = torch.sigmoid(s)
 
         h_gated = h_node * alpha.unsqueeze(-1)
         return alpha, h_gated

@@ -66,7 +66,6 @@ if __name__ == '__main__':
     opts.hidden_dim = args.hidden_dim if args.hidden_dim is not None else 64    
     opts.n_layer = args.n_layer if args.n_layer is not None else 3
     opts.dropout = args.dropout if args.dropout is not None else 0.02
-    opts.act = args.act if args.act is not None else 'idd'
     opts.n_batch = args.n_batch if args.n_batch is not None else (30 if opts.n_layer <=3 else 20)
     opts.n_tbatch = args.n_tbatch if args.n_tbatch is not None else (30 if opts.n_layer <=3 else 20)
     opts.use_full_pna = args.use_full_pna if args.use_full_pna else True
@@ -77,7 +76,7 @@ if __name__ == '__main__':
 
     # config_str = '%d,%.6f, %.4f, %.6f,  %d, %d, %d, %d, %.4f,%s\n' % (opts.K,opts.lr, opts.decay_rate, opts.lamb, opts.hidden_dim, opts.attn_dim, opts.n_layer, opts.n_batch, opts.dropout, opts.act)
     config_str = f'''K: {opts.K}, lr: {opts.lr}, decay_rate: {opts.decay_rate}, lamb: {opts.lamb}, hidden_dim: {opts.hidden_dim}, 
-                    n_layer: {opts.n_layer}, n_batch: {opts.n_batch}, dropout: {opts.dropout}, act: {opts.act}, item_bonus: {opts.item_bonus}\n'''
+                    n_layer: {opts.n_layer}, n_batch: {opts.n_batch}, dropout: {opts.dropout}, item_bonus: {opts.item_bonus}\n'''
                     
     print(config_str)
     with open(opts.perf_file, 'a+') as f:
