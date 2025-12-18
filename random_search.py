@@ -18,7 +18,6 @@ def sample_space():
         "hidden_dim": random.choice([48, 64]),
         "n_layer": random.choice([3, 4]),
         "dropout": random.uniform(0.0, 0.2),
-        "Gumbel_tau": random.uniform(0.8, 1.5),
         "K": random.choice([110, 130, 150]),
         "lamb": sample_log_uniform(3e-4, 8e-4),
         "item_bonus": random.uniform(0.0, 0.05),
@@ -49,7 +48,6 @@ for trial in range(N_TRIALS):
         "--hidden_dim", str(cfg["hidden_dim"]),
         "--n_layer", str(cfg["n_layer"]),
         "--dropout", str(cfg["dropout"]),
-        "--Gumbel_tau", str(cfg["Gumbel_tau"]),
         "--K", str(cfg["K"]),
         "--item_bonus", str(cfg["item_bonus"]),
     ]

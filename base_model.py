@@ -32,6 +32,7 @@ class BaseModel(object):
         self.n_test  = loader.n_test
         self.n_layer = args.n_layer
         self.args = args
+        self.K_neg = args.K_neg
 
         self.optimizer = Adam(self.model.parameters(), lr=args.lr, weight_decay=args.lamb)
 
@@ -57,7 +58,7 @@ class BaseModel(object):
             self.optimizer.zero_grad()
             scores = self.model(subs, rels) 
            
-            loss = cal_bpr_loss(self.n_users, pos, neg, scores)
+            loss = cal_bpr_loss_k_neg(self.n_users, pos, neg, scores, K=self.K_neg)
             loss.backward()
             self.optimizer.step()
 

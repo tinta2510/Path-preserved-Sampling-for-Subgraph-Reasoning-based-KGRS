@@ -9,10 +9,11 @@ from scipy.sparse import csr_matrix
 import numpy as np
 
 class DataLoader:
-    def __init__(self, task_dir, device='cuda' if torch.cuda.is_available() else 'cpu'):
+    def __init__(self, task_dir, device='cuda' if torch.cuda.is_available() else 'cpu', K_neg=10):
         self.task_dir = task_dir
         self.device = device
-        
+        self.K_neg = K_neg
+
         data_folder = Path(task_dir).name
         if  data_folder in {
             'new_last-fm',
@@ -263,7 +264,35 @@ class DataLoader:
         self.tn_fact = len(self.tKG)
         self.tM_sub = csr_matrix((np.ones((self.tn_fact,)), (np.arange(self.tn_fact), self.tKG[:,0])), shape=(self.tn_fact, self.n_nodes))
 
+    # def load_train_query(self, triples):
+    #     triples.sort(key=lambda x:(x[0], x[1]))
+    #     pos_items = defaultdict(lambda:list())
+    #     neg_items = defaultdict(list)
+        
+    #     for trip in triples:
+    #         h, r, t = trip            
+    #         pos_items[(h,r)].append(t)
+    #         while True:
+    #             neg_item = np.random.randint(low=self.n_users, high=self.n_users + self.n_items, size=1)[0]  #重要修改！low=n_users
+    #             if neg_item not in self.known_user_set[h]:
+    #                 break
+    #         neg_items[(h,r)].append(neg_item)
+        
+    #     queries = []
+    #     answers = []
+    #     wrongs = []
+    #     for key in pos_items:
+    #         queries.append(key) # Each query (h,r)
+    #         answers.append(np.array(pos_items[key])) # All positive items for (h,r)
+    #         wrongs.append(np.array(neg_items[key]))  # Sampled negative items for positive items for (h,r)
+        
+    #     return queries, answers, wrongs
+
     def load_train_query(self, triples):
+        """
+        Args:
+            K_neg: number of negative samples per positive item
+        """
         triples.sort(key=lambda x:(x[0], x[1]))
         pos_items = defaultdict(lambda:list())
         neg_items = defaultdict(list)
@@ -271,22 +300,28 @@ class DataLoader:
         for trip in triples:
             h, r, t = trip            
             pos_items[(h,r)].append(t)
-            while True:
-                neg_item = np.random.randint(low=self.n_users, high=self.n_users + self.n_items, size=1)[0]  #重要修改！low=n_users
-                if neg_item not in self.known_user_set[h]:
-                    break
-            neg_items[(h,r)].append(neg_item)
+            
+            # Sample K negative items for this positive
+            neg_samples = []
+            for _ in range(self.K_neg):
+                while True:
+                    neg_item = np.random.randint(low=self.n_users, high=self.n_users + self.n_items, size=1)[0]
+                    if neg_item not in self.known_user_set[h]:
+                        break
+                neg_samples.append(neg_item)
+            neg_items[(h,r)].append(neg_samples)
         
         queries = []
         answers = []
         wrongs = []
         for key in pos_items:
-            queries.append(key) # Each query (h,r)
-            answers.append(np.array(pos_items[key])) # All positive items for (h,r)
-            wrongs.append(np.array(neg_items[key]))  # Sampled negative items for positive items for (h,r)
+            queries.append(key)
+            # pos_items[key]: [num_pos]
+            answers.append(np.array(pos_items[key]))
+            # Stack all negative samples: [num_pos, K]
+            wrongs.append(np.array(neg_items[key]))
         
         return queries, answers, wrongs
-
 
     def load_query(self, triples):
         triples.sort(key=lambda x:(x[0], x[1]))

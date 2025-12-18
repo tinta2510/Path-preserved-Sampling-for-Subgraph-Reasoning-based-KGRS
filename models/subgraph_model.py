@@ -243,10 +243,9 @@ class AdaptiveSubgraphModel(torch.nn.Module):
 
         use_full_pna = getattr(params, "use_full_pna", True)
         PNA_delta = getattr(params, "PNA_delta", None)
-        Gumbel_tau = getattr(params, "Gumbel_tau", None)
         K = getattr(params, "K", 50)
         item_bonus = getattr(params, "item_bonus", 0.05)
-        print("Config - use_full_pna:", use_full_pna, " PNA_delta:", PNA_delta, " Gumbel_tau:", Gumbel_tau, 
+        print("Config - use_full_pna:", use_full_pna, " PNA_delta:", PNA_delta,
               " K:", K, " item_bonus:", item_bonus)
 
         # Stack per-layer AdaptiveSubgraphLayer modules

@@ -23,7 +23,6 @@ parser.add_argument('--n_batch', type=int, default=None)
 parser.add_argument('--n_tbatch', type=int, default=None)
 parser.add_argument('--use_full_pna', action='store_true')
 parser.add_argument('--PNA_delta', type=float, default=None)
-parser.add_argument('--Gumbel_tau', type=float, default=None)
 parser.add_argument('--K', type=int, default=None)
 parser.add_argument('--item_bonus', type=float, default=None)
 
@@ -70,13 +69,13 @@ if __name__ == '__main__':
     opts.n_tbatch = args.n_tbatch if args.n_tbatch is not None else (30 if opts.n_layer <=3 else 20)
     opts.use_full_pna = args.use_full_pna if args.use_full_pna else True
     opts.PNA_delta = args.PNA_delta if args.PNA_delta is not None else None
-    opts.Gumbel_tau = args.Gumbel_tau if args.Gumbel_tau is not None else 1.1
     opts.K = args.K if args.K is not None else 60
     opts.item_bonus = args.item_bonus if args.item_bonus is not None else 0.05
-
+    opts.K_neg = 20  # default number of negative samples
+    
     # config_str = '%d,%.6f, %.4f, %.6f,  %d, %d, %d, %d, %.4f,%s\n' % (opts.K,opts.lr, opts.decay_rate, opts.lamb, opts.hidden_dim, opts.attn_dim, opts.n_layer, opts.n_batch, opts.dropout, opts.act)
     config_str = f'''K: {opts.K}, lr: {opts.lr}, decay_rate: {opts.decay_rate}, lamb: {opts.lamb}, hidden_dim: {opts.hidden_dim}, 
-                    n_layer: {opts.n_layer}, n_batch: {opts.n_batch}, dropout: {opts.dropout}, item_bonus: {opts.item_bonus}\n'''
+                    n_layer: {opts.n_layer}, n_batch: {opts.n_batch}, dropout: {opts.dropout}, item_bonus: {opts.item_bonus}, K_neg: {opts.K_neg}\n'''
                     
     print(config_str)
     with open(opts.perf_file, 'a+') as f:
