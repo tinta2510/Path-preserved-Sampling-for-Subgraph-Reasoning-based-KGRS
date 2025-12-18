@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 
-class GumbelNodeScorer(nn.Module):
+class NodeScorer(nn.Module):
     """
     Task- & semantic-aware node pruning with Gumbel-sigmoid gates.
 
@@ -17,12 +17,8 @@ class GumbelNodeScorer(nn.Module):
         we use hard gating with threshold θ:
             α_z^ℓ = 1 if s_z^ℓ > θ else 0.
     """
-    def __init__(self, user_dim, node_dim, tau=None):
+    def __init__(self, user_dim, node_dim):
         super().__init__()
-        if tau is None:
-            self.tau = 1.1
-        else:
-            self.tau = tau
             
         self.user_dim = user_dim
         self.node_dim = node_dim

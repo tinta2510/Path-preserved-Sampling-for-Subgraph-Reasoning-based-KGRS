@@ -14,7 +14,7 @@ def cal_bpr_loss(n_users, pos, neg, scores):
 
     return loss
 
-def cal_bpr_loss_k_neg(n_users, pos, neg_samples, scores, K=5):
+def cal_bpr_loss_k_neg(n_users, pos, neg_samples, scores, K):
     """
     BPR loss with K negative samples for each positive item.
     

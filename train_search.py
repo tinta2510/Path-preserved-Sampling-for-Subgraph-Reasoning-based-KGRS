@@ -52,13 +52,6 @@ if __name__ == '__main__':
     if torch.cuda.is_available():   
         torch.cuda.set_device(args.gpu)
 
-    loader = DataLoader(args.data_path)
-    opts.n_ent = loader.n_ent
-    opts.n_rel = loader.n_rel
-    opts.n_users = loader.n_users   
-    opts.n_items = loader.n_items
-    opts.n_nodes = loader.n_nodes
-
     opts.lr = args.lr if args.lr is not None else 0.0005
     opts.decay_rate = args.decay_rate if args.decay_rate is not None else 0.994
     opts.lamb = args.lamb if args.lamb is not None else 0.00014
@@ -72,6 +65,13 @@ if __name__ == '__main__':
     opts.K = args.K if args.K is not None else 60
     opts.item_bonus = args.item_bonus if args.item_bonus is not None else 0.05
     opts.K_neg = 20  # default number of negative samples
+    
+    loader = DataLoader(args.data_path, opts.K_neg, device='cuda' if torch.cuda.is_available() else 'cpu')
+    opts.n_ent = loader.n_ent
+    opts.n_rel = loader.n_rel
+    opts.n_users = loader.n_users   
+    opts.n_items = loader.n_items
+    opts.n_nodes = loader.n_nodes
     
     # config_str = '%d,%.6f, %.4f, %.6f,  %d, %d, %d, %d, %.4f,%s\n' % (opts.K,opts.lr, opts.decay_rate, opts.lamb, opts.hidden_dim, opts.attn_dim, opts.n_layer, opts.n_batch, opts.dropout, opts.act)
     config_str = f'''K: {opts.K}, lr: {opts.lr}, decay_rate: {opts.decay_rate}, lamb: {opts.lamb}, hidden_dim: {opts.hidden_dim}, 

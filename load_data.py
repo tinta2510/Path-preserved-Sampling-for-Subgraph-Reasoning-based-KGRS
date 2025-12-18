@@ -9,7 +9,7 @@ from scipy.sparse import csr_matrix
 import numpy as np
 
 class DataLoader:
-    def __init__(self, task_dir, device='cuda' if torch.cuda.is_available() else 'cpu', K_neg=10):
+    def __init__(self, task_dir, K_neg, device='cuda' if torch.cuda.is_available() else 'cpu'):
         self.task_dir = task_dir
         self.device = device
         self.K_neg = K_neg
