@@ -47,6 +47,7 @@ if __name__ == '__main__':
         opts.n_tbatch = 30
         opts.use_full_pna = True
         opts.PNA_delta = None
+        opts.Gumbel_tau = 1.1
         opts.K = 80
         opts.item_bonus = 0.05
         opts.K_neg = 20

@@ -4,7 +4,7 @@ from torch_scatter import scatter
 
 from .message import GRUMessageFunction
 from .aggregator import FullPNAAggregator, SimplifiedPNAAggregator
-from .scorer import NodeScorer
+from .scorer import GumbelNodeScorer
 
 class AdaptiveSubgraphLayer(nn.Module):
     """
@@ -26,6 +26,7 @@ class AdaptiveSubgraphLayer(nn.Module):
         n_node,
         use_full_pna=True,
         PNA_delta=None,
+        Gumbel_tau=None,
         K=50,
         item_bonus=0.05,
         device='cuda' if torch.cuda.is_available() else 'cpu',
@@ -49,9 +50,10 @@ class AdaptiveSubgraphLayer(nn.Module):
             self.aggregator = FullPNAAggregator(node_dim=node_dim, delta=PNA_delta)
         else:
             self.aggregator = SimplifiedPNAAggregator(node_dim=node_dim)
-        self.scorer = NodeScorer(
+        self.scorer = GumbelNodeScorer(
             user_dim=node_dim,
-            node_dim=node_dim
+            node_dim=node_dim,
+            tau=Gumbel_tau
         )
 
     def forward(self, q_sub, q_rel, hidden, edges, nodes,
@@ -241,10 +243,11 @@ class AdaptiveSubgraphModel(torch.nn.Module):
 
         use_full_pna = getattr(params, "use_full_pna", True)
         PNA_delta = getattr(params, "PNA_delta", None)
+        Gumbel_tau = getattr(params, "Gumbel_tau", 1.1)
         K = getattr(params, "K", 50)
         item_bonus = getattr(params, "item_bonus", 0.05)
         print("Config - use_full_pna:", use_full_pna, " PNA_delta:", PNA_delta,
-              " K:", K, " item_bonus:", item_bonus)
+              " K:", K, " item_bonus:", item_bonus, " Gumbel_tau:", Gumbel_tau)
 
         # Stack per-layer AdaptiveSubgraphLayer modules
         layers = []
@@ -258,6 +261,7 @@ class AdaptiveSubgraphModel(torch.nn.Module):
                     n_node=self.n_nodes,
                     use_full_pna=use_full_pna,
                     PNA_delta=PNA_delta,
+                    Gumbel_tau=Gumbel_tau,
                     K=K,
                     item_bonus=item_bonus,
                     device=self.device,

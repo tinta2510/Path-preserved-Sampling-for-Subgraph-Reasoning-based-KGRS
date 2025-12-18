@@ -17,8 +17,9 @@ def sample_space():
         "lr": sample_log_uniform(3e-4, 8e-4),
         "hidden_dim": random.choice([48, 64]),
         "n_layer": random.choice([3, 4]),
+        "Gumbel_tau": random.uniform(1.1, 1.5),
         "dropout": random.uniform(0.0, 0.2),
-        "K": random.choice([110, 130, 150]),
+        "K": random.choice([150, 170, 190]),
         "lamb": sample_log_uniform(3e-4, 8e-4),
         "item_bonus": random.uniform(0.0, 0.05),
     }
@@ -27,7 +28,7 @@ def sample_space():
 # Random search loop
 # =========================
 N_TRIALS = 10
-DATA_PATH = "data/last-fm/"
+DATA_PATH = "data/new_last-fm/"
 GPU_ID = 0
 LOG_FILE = "results/random_search_log.jsonl"
 
@@ -47,6 +48,7 @@ for trial in range(N_TRIALS):
         "--lamb", str(cfg["lamb"]),
         "--hidden_dim", str(cfg["hidden_dim"]),
         "--n_layer", str(cfg["n_layer"]),
+        "--Gumbel_tau", str(cfg["Gumbel_tau"]),
         "--dropout", str(cfg["dropout"]),
         "--K", str(cfg["K"]),
         "--item_bonus", str(cfg["item_bonus"]),
