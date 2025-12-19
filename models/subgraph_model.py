@@ -355,7 +355,7 @@ class AdaptiveSubgraphModel(torch.nn.Module):
         scores = self.W_final(pairs).squeeze(-1)  # [num_last_nodes]
 
         scores_all = torch.zeros((n, self.n_items)).to(self.device)
-        scores_all[(final_nodes[:, 0], final_nodes[:, 1] - self.n_users)] = scores
+        scores_all[(final_nodes[:, 0], final_nodes[:, 1] - self.n_users)] = scores.float()
         
         # --- LOGGING ---
         # Compute statistics per batch instance

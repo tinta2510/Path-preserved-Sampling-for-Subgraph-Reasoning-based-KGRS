@@ -44,7 +44,7 @@ class BaseModel(object):
         self.i_time = 0
         
         self.use_amp = torch.cuda.is_available()
-        self.scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
+        self.scaler = torch.amp.GradScaler('cuda', enabled=self.use_amp)
 
         self.n_params = count_model_parameters(self.model)
         print(f"[INFO] Model initialized with {self.n_params:,} trainable parameters")
@@ -71,7 +71,7 @@ class BaseModel(object):
             self.optimizer.zero_grad()
             
             # forward + loss in autocast
-            with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.float16):
+            with torch.amp.autocast('cuda', enabled=use_amp, dtype=torch.float16):
                 scores, _ = self.model(subs, rels, test_user_set=None)
                 loss = cal_bpr_loss_k_neg(self.n_users, pos, neg, scores, K=self.K_neg)
 
