@@ -4,6 +4,7 @@ import torch
 import numpy as np
 from load_data import DataLoader
 from base_model import BaseModel
+from logger import SubgraphLogger
 
 parser = argparse.ArgumentParser(description="Parser for Adaptive Subgraph Model")
 parser.add_argument('--data_path', type=str, default='data/last-fm/')
@@ -70,11 +71,40 @@ if __name__ == '__main__':
 
     model = BaseModel(opts, loader)
 
+    # Initialize logger
+    logger = SubgraphLogger(results_dir=results_dir, dataset_name=dataset)
+
     best_recall = 0
+    best_summary = None
+
     for epoch in range(15):
     
         print('epoch ',epoch)
-        recall,ndcg, out_str = model.train_batch()
+        recall,ndcg, out_str = model.train_batch(logger)
+        
+        # --- LOGGING ---
+        # Compute epoch summary
+        summary = logger.compute_epoch_summary(
+            n_params=model.n_params,
+            train_time=model.t_time,
+            inference_time=model.i_time,
+            recall=recall,
+            ndcg=ndcg
+        )
+        
+        # Save epoch log
+        log_file = logger.save_epoch_log(epoch, summary)
+        print(f"[INFO] Saved epoch {epoch} log to {log_file}")
+        
+        # Print formatted summary
+        print(logger.format_summary_string(summary))
+        
+        # Save to text file
+        with open(opts.perf_file, 'a+') as f:
+            f.write(f"Epoch {epoch}\n")
+            f.write(logger.format_summary_string(summary))
+            f.write("\n")
+        # ------------------
         
         with open(opts.perf_file, 'a+') as f:
             f.write(str(epoch) + out_str)
@@ -82,9 +112,16 @@ if __name__ == '__main__':
         if recall > best_recall:
             best_recall = recall
             best_str = out_str
+            best_summary = summary
             print("[BEST]" + str(epoch) + '\t' + best_str)
+            
+    # Save best model summary
+    if best_summary is not None:
+        best_log_file = logger.save_best_model_log(best_summary)
+        print(f"[INFO] Saved best model summary to {best_log_file}")
+    
     with open(opts.perf_file, 'a+') as f:
-        f.write('best:\n'+best_str)
+        f.write('best:\n' + best_str)
 
     print(best_str)
-
+    print(f"\n[INFO] All logs saved to {logger.logs_dir}/")

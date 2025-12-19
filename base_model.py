@@ -1,13 +1,16 @@
 from random import random
-import torch
-import numpy as np
 import time
-from tqdm import tqdm
+import heapq
+
+import numpy as np
+import torch
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ExponentialLR
-import heapq
+from tqdm import tqdm
+
 from models.subgraph_model import AdaptiveSubgraphModel
 from utils import *
+from logger import SubgraphLogger, count_model_parameters
 
 class BaseModel(object):
     def __init__(self, args, loader):
@@ -38,9 +41,12 @@ class BaseModel(object):
 
         self.smooth = 1e-5
         self.t_time = 0
+        self.i_time = 0
 
+        self.n_params = count_model_parameters(self.model)
+        print(f"[INFO] Model initialized with {self.n_params:,} trainable parameters")
 
-    def train_batch(self,):  
+    def train_batch(self, logger):  
         epoch_loss = 0
         i = 0
         
@@ -56,7 +62,7 @@ class BaseModel(object):
             subs, rels, pos, neg = self.loader.get_batch(batch_idx)
 
             self.optimizer.zero_grad()
-            scores = self.model(subs, rels) 
+            scores, _ = self.model(subs, rels, test_user_set=None)
            
             loss = cal_bpr_loss_k_neg(self.n_users, pos, neg, scores, K=self.K_neg)
             loss.backward()
@@ -75,7 +81,13 @@ class BaseModel(object):
         self.t_time += time.time() - t_time
         print('epoch_loss:',epoch_loss)
         print('start test')
-        recall, ndcg, out_str = self.test_batch() 
+        
+        # --- LOGGING ---
+        # Reset logger stats before testing
+        logger.reset_epoch_stats()
+        # ----------------
+        
+        recall, ndcg, out_str = self.test_batch(logger) 
         
         self.loader.shuffle_train()
         print(out_str)
@@ -114,7 +126,7 @@ class BaseModel(object):
         return recall, ndcg
 
 
-    def test_batch(self, ):
+    def test_batch(self, logger):
         batch_size = self.n_tbatch
 
         n_data = self.n_test
@@ -129,7 +141,12 @@ class BaseModel(object):
             end = min(n_data, (id+1)*batch_size)
             batch_idx = np.arange(start, end)
             subs, rels, objs = self.loader.get_batch(batch_idx, data='test')
-            scores = self.model(subs, rels, mode='test').data.cpu().numpy()
+            scores, subgraph_info = self.model(subs, rels, mode='test', test_user_set=self.test_user_set)
+            scores = scores.data.cpu().numpy()
+        
+            # --- LOGGING ---
+            logger.collect_batch_stats(subgraph_info)
+            # ----------------
         
             batch_recall, batch_ndcg = 0, 0
             for i in range(len(subs)):
@@ -148,9 +165,9 @@ class BaseModel(object):
         recall = recall / n_data
         ndcg = ndcg / n_data
 
-        i_time = time.time() - i_time
+        self.i_time = time.time() - i_time
 
-        out_str = '[TEST] recall:%.4f  ndcg:%.4f   [TIME] train:%.4f inference:%.4f\n'%( recall, ndcg, self.t_time, i_time)
+        out_str = '[TEST] recall:%.4f  ndcg:%.4f   [TIME] train:%.4f inference:%.4f\n'%( recall, ndcg, self.t_time, self.i_time)
         
         return recall, ndcg, out_str
     
