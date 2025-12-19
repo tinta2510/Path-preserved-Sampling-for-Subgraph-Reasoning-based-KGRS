@@ -28,7 +28,7 @@ def sample_space():
 # Random search loop
 # =========================
 N_TRIALS = 10
-DATA_PATH = "data/new_last-fm/"
+DATA_PATH = "data/amazon-book/"
 GPU_ID = 0
 LOG_FILE = "results/random_search_log.jsonl"
 
