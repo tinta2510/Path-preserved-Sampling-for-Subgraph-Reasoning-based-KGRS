@@ -311,6 +311,10 @@ class AdaptiveSubgraphModel(torch.nn.Module):
                 nodes_np, mode=mode
             )
             
+            nodes = nodes.to(self.device, non_blocking=True)
+            edges = edges.to(self.device, non_blocking=True)
+            old_nodes_new_idx = old_nodes_new_idx.to(self.device, non_blocking=True)
+                        
             # --- LOGGING ---
             if mode == 'test':
                 subgraph_sizes_before_sampling.append(nodes.shape[0])

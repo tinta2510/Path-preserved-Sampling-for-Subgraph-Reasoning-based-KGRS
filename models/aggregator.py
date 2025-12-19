@@ -117,7 +117,9 @@ class FullPNAAggregator(nn.Module):
         max_msg = scatter(messages, dst_index, dim=0, dim_size=N, reduce="max")
         min_msg = scatter(messages, dst_index, dim=0, dim_size=N, reduce="min")
 
-        sum_sq = scatter(messages ** 2, dst_index, dim=0, dim_size=N, reduce="sum")
+        msg_sq = messages.mul(messages)
+        sum_sq = scatter(msg_sq, dst_index, dim=0, dim_size=N, reduce="sum")
+        del msg_sq
         mean_sq = sum_sq / deg_clamped
         var = torch.relu(mean_sq - mean_msg ** 2)
         std_msg = torch.sqrt(var + self.eps)

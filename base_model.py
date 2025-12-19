@@ -42,6 +42,9 @@ class BaseModel(object):
         self.smooth = 1e-5
         self.t_time = 0
         self.i_time = 0
+        
+        self.use_amp = torch.cuda.is_available()
+        self.scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
 
         self.n_params = count_model_parameters(self.model)
         print(f"[INFO] Model initialized with {self.n_params:,} trainable parameters")
@@ -55,6 +58,10 @@ class BaseModel(object):
         
         t_time = time.time()
         self.model.train()
+        
+        use_amp = torch.cuda.is_available()
+        scaler = self.scaler  # created in __init__
+        
         for i in range(n_batch):
             start = i*batch_size
             end = min(self.loader.n_train, (i+1)*batch_size)
@@ -62,11 +69,22 @@ class BaseModel(object):
             subs, rels, pos, neg = self.loader.get_batch(batch_idx)
 
             self.optimizer.zero_grad()
-            scores, _ = self.model(subs, rels, test_user_set=None)
-           
-            loss = cal_bpr_loss_k_neg(self.n_users, pos, neg, scores, K=self.K_neg)
-            loss.backward()
-            self.optimizer.step()
+            
+            # forward + loss in autocast
+            with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.float16):
+                scores, _ = self.model(subs, rels, test_user_set=None)
+                loss = cal_bpr_loss_k_neg(self.n_users, pos, neg, scores, K=self.K_neg)
+
+            # check for non-finite loss
+            if not torch.isfinite(loss):
+                print("Non-finite loss, skipping step")
+                self.optimizer.zero_grad(set_to_none=True)
+                continue
+                    
+            # backward + step using GradScaler
+            scaler.scale(loss).backward()
+            scaler.step(self.optimizer)
+            scaler.update()
 
             if i % 250 == 0 :
                 print('batch:',i, 'loss:', loss.item())

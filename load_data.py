@@ -358,7 +358,7 @@ class DataLoader:
             [np.expand_dims(edges[1],1), KG[edges[0]]],
             axis=1
         )     # (batch_idx, head, rela, tail)
-        sampled_edges = torch.LongTensor(sampled_edges).to(self.device)
+        sampled_edges = torch.LongTensor(sampled_edges)
 
         # index to nodes
         # head_nodes: tuple of unique (batch_idx, head_node); head_index: index of head_nodes in sampled_edges
