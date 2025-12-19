@@ -38,19 +38,19 @@ if __name__ == '__main__':
         torch.cuda.set_device(args.gpu)
 
     if dataset in ['last-fm-lightkg', 'last-fm']:
-        opts.lr = 0.0005
+        opts.lr = 5e-4
         opts.decay_rate = 0.994
-        opts.lamb = 0.00014
+        opts.lamb = 4e-4
         opts.hidden_dim = 64
         opts.n_layer = 3
-        opts.dropout = 0.02
+        opts.dropout = 0.05
         opts.n_batch = 30
         opts.n_tbatch = 30
         opts.use_full_pna = True
         opts.PNA_delta = None
-        opts.Gumbel_tau = 1.1
-        opts.K = 80
-        opts.item_bonus = 0.05
+        opts.Gumbel_tau = 1.45
+        opts.K = 150
+        opts.item_bonus = 0.03
         opts.K_neg = 20
     else:
         raise NotImplemented("No hyper-parameters for this dataset!")
