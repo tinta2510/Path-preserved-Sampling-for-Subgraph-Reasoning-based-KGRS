@@ -14,12 +14,12 @@ def sample_log_uniform(low, high):
 
 def sample_space():
     return {
-        "lr": sample_log_uniform(3e-4, 8e-4),
+        "lr": sample_log_uniform(1e-4, 1e-3),
         "hidden_dim": random.choice([48, 64]),
-        "n_layer": random.choice([3, 4]),
+        "n_layer": random.choice([3]),
         "Gumbel_tau": random.uniform(1.1, 1.5),
-        "dropout": random.uniform(0.0, 0.2),
-        "K": random.choice([150, 170, 190]),
+        "dropout": random.uniform(0.0, 0.1),
+        "K": random.choice([190, 210, 230]),
         "lamb": sample_log_uniform(3e-4, 8e-4),
         "item_bonus": random.uniform(0.0, 0.05),
     }
