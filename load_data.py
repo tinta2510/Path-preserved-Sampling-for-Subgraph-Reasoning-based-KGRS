@@ -8,8 +8,10 @@ import torch
 from scipy.sparse import csr_matrix
 import numpy as np
 
+from ppr import get_ppr
+
 class DataLoader:
-    def __init__(self, task_dir, K_neg, device='cuda' if torch.cuda.is_available() else 'cpu'):
+    def __init__(self, task_dir, K_neg, K_edges, device='cuda' if torch.cuda.is_available() else 'cpu'):
         self.task_dir = task_dir
         self.device = device
         self.K_neg = K_neg
@@ -88,6 +90,10 @@ class DataLoader:
         print('n_facts:',len(self.facts_cf), 'n_test_cf:', len(self.test_cf), 'n_train:', self.n_train,  'n_test:', self.n_test)
         print('users:', self.n_users,'items:', self.n_items, 'other entities:', self.n_ent - self.n_items )        
 
+        self.K_edges = K_edges
+        if K_edges is not None:
+            self.ppr = get_ppr(self, bs=128, N=20)
+        
     def read_cf(self, file_name):  
         inter_mat = list()
         lines = open(file_name, "r").readlines()
@@ -325,7 +331,7 @@ class DataLoader:
             answers.append(np.array(trip_hr[key]))
         return queries, answers
 
-    def get_neighbors(self, nodes, mode='train'):
+    def get_neighbors(self, nodes, query_users, mode='train'):
         batch = nodes[:, 0].astype(np.int64)
         head  = nodes[:, 1].astype(np.int64)
 
@@ -335,28 +341,83 @@ class DataLoader:
         else:
             KG = self.tKG
             indptr, indices = self.tindptr, self.tindices
-
-        starts = indptr[head]
-        ends   = indptr[head + 1]
-        lens   = ends - starts
-        total  = int(lens.sum())
-
-        # repeat batch ids per outgoing edge
-        batch_rep = np.repeat(batch, lens)
-
-        # gather all edge indices into one big array
-        # base start pointer repeated for each outgoing edge
-        base = np.repeat(starts, lens)  # [total]
+            
+        self_loop_rel = self.n_rel * 2 + 2
         
-        # offset within each head's neighbor block: 0,1,2,... per head
-        # Example: lens=[2,3] -> offset=[0,1, 0,1,2]
-        group_start = np.repeat(np.cumsum(lens) - lens, lens)  # [total]
-        offset = np.arange(total, dtype=np.int64) - group_start
+        if self.K_edges is None:
+            starts = indptr[head]
+            ends   = indptr[head + 1]
+            lens   = ends - starts
+            total  = int(lens.sum())
 
-        # absolute positions into `indices`
-        pos = base + offset  # [total]
-        edge_idx = indices[pos]  # [total] edge indices into KG
-        
+            # base start pointer repeated for each outgoing edge
+            base = np.repeat(starts, lens)  # [total]
+            
+            # offset within each head's neighbor block: 0,1,2,... per head
+            # Example: lens=[2,3] -> offset=[0,1, 0,1,2]
+            group_start = np.repeat(np.cumsum(lens) - lens, lens)  # [total]
+            offset = np.arange(total, dtype=np.int64) - group_start
+
+            # absolute positions into `indices`
+            pos = base + offset  # [total]
+            edge_idx = indices[pos]  # [total] edge indices into KG
+
+            # repeat batch ids per outgoing edge
+            batch_rep = np.repeat(batch, lens)
+        else:
+            print("PPR")
+            chosen_blocks = []
+            chosen_lens = np.empty(len(head), dtype=np.int64)
+ 
+            for i, (b, h) in enumerate(zip(batch, head)):
+                s = indptr[h]
+                e = indptr[h + 1]
+                block_edge_ids = indices[s:e]   # edge indices into KG
+
+                block = KG[block_edge_ids]      # [deg, 3] -> (h, r, t)
+
+                # ---- 1) find self-loop edge ----
+                self_mask = (block[:, 1] == self_loop_rel) & (block[:, 2] == h)
+                keep = []
+
+                keep.append(block_edge_ids[self_mask][0])  # always keep
+
+                # ---- 2) candidate edges (non self-loop) ----
+                cand_edge_ids = block_edge_ids[~self_mask]
+
+                if (
+                    cand_edge_ids.size == 0
+                    or self.K_edges <= len(keep)
+                ):
+                    out = np.array(keep, dtype=np.int64)
+                    chosen_blocks.append(out)
+                    chosen_lens[i] = out.size
+                    continue
+
+                # ---- 3) PPR scoring ----
+                S = self.K_edges - len(keep)
+                u = query_users[int(b)]
+
+                tails = KG[cand_edge_ids, 2].astype(np.int64)
+                scores = self.ppr[u, tails]     # global PPR(user -> tail)
+
+                # ---- 4) top-S selection ----
+                if cand_edge_ids.size <= S:
+                    out = np.concatenate([np.array(keep, dtype=np.int64), cand_edge_ids])
+                else:
+                    top_pos = np.argpartition(scores, -S)[-S:]
+                    out = np.concatenate([np.array(keep, dtype=np.int64), cand_edge_ids[top_pos]])
+
+                chosen_blocks.append(out)
+                chosen_lens[i] = out.size
+
+            edge_idx = (
+                np.concatenate(chosen_blocks, axis=0)
+                if chosen_blocks
+                else np.empty((0,), dtype=np.int64)
+            )
+            batch_rep = np.repeat(batch, chosen_lens)
+            
         # build sampled_edges: [batch_idx, head, rel, tail]
         sampled_edges = np.column_stack([batch_rep, KG[edge_idx]]).astype(np.int64)
         sampled_edges = torch.LongTensor(sampled_edges).to(self.device)

@@ -22,13 +22,14 @@ def sample_space():
         "K": random.choice([120, 150, 180]),
         "lamb": sample_log_uniform(3e-4, 8e-4),
         "item_bonus": random.uniform(0.0, 0.05),
+        "K_edges": random.choice([128]),
     }
 
 # =========================
 # Random search loop
 # =========================
 N_TRIALS = 10
-DATA_PATH = "data/amazon-book/"
+DATA_PATH = "data/last-fm-lightkg/"
 GPU_ID = 0
 LOG_FILE = "results/random_search_log.jsonl"
 
@@ -52,6 +53,7 @@ for trial in range(N_TRIALS):
         "--dropout", str(cfg["dropout"]),
         "--K", str(cfg["K"]),
         "--item_bonus", str(cfg["item_bonus"]),
+        "--K_edges", str(cfg["K_edges"]),
     ]
 
     start = time.time()

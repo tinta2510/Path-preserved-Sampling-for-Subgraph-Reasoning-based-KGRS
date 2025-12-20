@@ -351,9 +351,15 @@ class AdaptiveSubgraphModel(torch.nn.Module):
 
         for i in range(self.n_layer):
             # Expand user-centric computation graph for this layer
+            t0 = time.time()
+            print(f"Layer {i+1}/{self.n_layer}: Expanding subgraphs... Size: {nodes.shape[0]} nodes")
             nodes_np = nodes.detach().cpu().numpy()
-            nodes, edges, old_nodes_new_idx = self.loader.get_neighbors(nodes_np, mode=mode)
-            
+            nodes, edges, old_nodes_new_idx = self.loader.get_neighbors(
+                nodes_np,
+                query_users=subs,   # IMPORTANT
+                mode=mode
+            )
+            print(f"Layer {i+1}/{self.n_layer}: Subgraph expansion done in {time.time() - t0:.2f} sec. Got {nodes.shape[0]} nodes and {edges.shape[0]} edges.")
             # --- LOGGING ---
             if mode == 'test':
                 subgraph_sizes_before_sampling.append(nodes.shape[0])

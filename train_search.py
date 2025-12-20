@@ -27,6 +27,7 @@ parser.add_argument('--PNA_delta', type=float, default=None)
 parser.add_argument('--Gumbel_tau', type=float, default=None)
 parser.add_argument('--K', type=int, default=None)
 parser.add_argument('--item_bonus', type=float, default=None)
+parser.add_argument('--K_edges', type=int, default=None)
 
 args = parser.parse_args()
 
@@ -68,8 +69,9 @@ if __name__ == '__main__':
     opts.K = args.K if args.K is not None else 60
     opts.item_bonus = args.item_bonus if args.item_bonus is not None else 0.05
     opts.K_neg = 20  # default number of negative samples
+    opts.K_edges = args.K_edges if args.K_edges is not None else None
     
-    loader = DataLoader(args.data_path, opts.K_neg, device='cuda' if torch.cuda.is_available() else 'cpu')
+    loader = DataLoader(args.data_path, opts.K_neg, opts.K_edges, device='cuda' if torch.cuda.is_available() else 'cpu')
     opts.n_ent = loader.n_ent
     opts.n_rel = loader.n_rel
     opts.n_users = loader.n_users   

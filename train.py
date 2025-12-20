@@ -52,11 +52,12 @@ if __name__ == '__main__':
         opts.K = 150
         opts.item_bonus = 0.03
         opts.K_neg = 20
+        opts.K_edges = 32
     else:
         raise NotImplemented("No hyper-parameters for this dataset!")
     
     loader = DataLoader(args.data_path, device='cuda' if torch.cuda.is_available() else 'cpu', 
-                        K_neg=opts.K_neg)
+                        K_neg=opts.K_neg, K_edges=opts.K_edges)
     opts.n_ent = loader.n_ent
     opts.n_rel = loader.n_rel
     opts.n_users = loader.n_users   
