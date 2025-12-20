@@ -10,17 +10,17 @@ def get_ppr(loader, bs=128, N=15):
     tkg = torch.LongTensor(loader.tKG).to(loader.device)
     len_tkg = len(tkg)
     uni, count = torch.unique(tkg[:,0], dim=0, return_inverse=False, return_counts=True)
-
+    print('count unique heads done')
     id_c = torch.cat((torch.arange(loader.n_nodes).view(1,-1),torch.arange(loader.n_nodes).view(1,-1)), dim=0).to(loader.device)
     val_c = 1.0 / count
     cnt = torch.sparse_coo_tensor(id_c, val_c, (loader.n_nodes,loader.n_nodes)).to(loader.device)
-
+    print('cnt matrix ready')
     index = torch.cat((tkg[:,0].view(1,-1),tkg[:,2].view(1,-1)),dim=0).to(loader.device)
     value = torch.ones(len_tkg).to(loader.device)
     Mkg = torch.sparse_coo_tensor(index, value, (loader.n_nodes,loader.n_nodes)).to(loader.device)
-
+    print('Mkg matrix ready')
     M = torch.sparse.mm(Mkg, cnt).to(loader.device)
-    # print('M ready')
+    print('M ready')
     s_time = time.time()
 
     alpha = 0.85

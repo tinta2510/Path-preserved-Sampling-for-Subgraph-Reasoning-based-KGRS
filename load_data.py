@@ -92,7 +92,7 @@ class DataLoader:
 
         self.K_edges = K_edges
         if K_edges is not None:
-            self.ppr = get_ppr(self, bs=128, N=20)
+            self.ppr = get_ppr(self, bs=128, N=15)
         
     def read_cf(self, file_name):  
         inter_mat = list()
