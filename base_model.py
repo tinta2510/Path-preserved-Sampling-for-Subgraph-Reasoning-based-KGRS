@@ -83,18 +83,13 @@ class BaseModel(object):
                     
             # backward + step using GradScaler
             scaler.scale(loss).backward()
+            scaler.unscale_(self.optimizer)
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
             scaler.step(self.optimizer)
             scaler.update()
 
             if i % 250 == 0 :
                 print('batch:',i, 'loss:', loss.item())
-            # avoid NaN
-            for p in self.model.parameters():
-                X = p.data.clone()
-                flag = X != X
-                X[flag] = np.random.random()
-                p.data.copy_(X)
-            epoch_loss += loss.item()
 
         self.t_time += time.time() - t_time
         print('epoch_loss:',epoch_loss)

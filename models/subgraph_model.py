@@ -108,20 +108,31 @@ class AdaptiveSubgraphLayer(nn.Module):
         B = q_sub.size(0)
         node_batch = nodes[:, 0].long()      # [N]
         node_ent   = nodes[:, 1].long()      # [N]
-        h_user = torch.zeros(B, D, device=self.device)
+        
+        # Build target pairs [B,2]: (b, q_sub[b])
+        target = torch.stack([torch.arange(B, device=nodes.device), q_sub], dim=1)  # [B,2]
 
-        for b in range(B):
-            center_uid = q_sub[b].item()
-            # center user node for this query
-            center_mask = (node_batch == b) & (node_ent == center_uid)
+        # Find matching positions by hashing pairs
+        key_nodes  = node_batch * (self.n_user + self.n_node + 10) + node_ent
+        key_target = target[:,0] * (self.n_user + self.n_node + 10) + target[:,1]
 
-            if center_mask.any():
-                # there should normally be exactly one; take the first
-                h_user[b] = h_tilde[center_mask][0]
-            else:
-                raise ValueError(
-                    f"Center user node (batch {b}, user {center_uid}) not found in current nodes."
-                )
+        idx = (key_nodes[:, None] == key_target[None, :]).float().argmax(dim=0)  # [B]
+        h_user = h_tilde[idx]  # [B,D]
+        
+        # h_user = torch.zeros(B, D, device=self.device)
+
+        # for b in range(B):
+        #     center_uid = q_sub[b].item()
+        #     # center user node for this query
+        #     center_mask = (node_batch == b) & (node_ent == center_uid)
+
+        #     if center_mask.any():
+        #         # there should normally be exactly one; take the first
+        #         h_user[b] = h_tilde[center_mask][0]
+        #     else:
+        #         raise ValueError(
+        #             f"Center user node (batch {b}, user {center_uid}) not found in current nodes."
+        #         )
                     
         # 5) node gating (feature-level) - apply only to non-last layers
         alpha, hidden_all = self.scorer(
@@ -289,8 +300,8 @@ class AdaptiveSubgraphModel(torch.nn.Module):
         q_rel = torch.LongTensor(rels).to(self.device)
 
         # Initial node set: one node per user (batch_idx, user_id)
-        nodes = torch.cat(
-            [torch.arange(n).unsqueeze(1).to(self.device), q_sub.unsqueeze(1)], dim=1
+        torch.cat(
+            [torch.arange(n).unsqueeze(1), q_sub.cpu().unsqueeze(1)], dim=1
         )  # [n, 2]
 
         # Initial hidden states (all zeros)
@@ -306,7 +317,7 @@ class AdaptiveSubgraphModel(torch.nn.Module):
 
         for i in range(self.n_layer):
             # Expand user-centric computation graph for this layer
-            nodes_np = nodes.data.cpu().numpy()
+            nodes_np = nodes.detach().cpu().numpy()
             nodes, edges, old_nodes_new_idx = self.loader.get_neighbors(
                 nodes_np, mode=mode
             )
