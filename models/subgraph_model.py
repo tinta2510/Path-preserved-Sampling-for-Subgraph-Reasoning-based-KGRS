@@ -356,10 +356,6 @@ class AdaptiveSubgraphModel(torch.nn.Module):
             nodes, edges, old_nodes_new_idx = self.loader.get_neighbors(nodes_np, mode=mode)
             print(f"Get neighbors time (layer {i}): {time.time() - t0:.4f} sec before size {nodes_np.shape[0]} after size {nodes.shape[0]} edges {edges.shape[0]}")
             
-            nodes = nodes.to(self.device, non_blocking=True)
-            edges = edges.to(self.device, non_blocking=True)
-            old_nodes_new_idx = old_nodes_new_idx.to(self.device, non_blocking=True)
-            
             # --- LOGGING ---
             if mode == 'test':
                 subgraph_sizes_before_sampling.append(nodes.shape[0])

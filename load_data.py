@@ -344,20 +344,23 @@ class DataLoader:
         # repeat batch ids per outgoing edge
         batch_rep = np.repeat(batch, lens)
 
-        # gather all edge indices into one big array (loop only over heads, not edges)
-        edge_idx = np.empty(total, dtype=np.int64)
-        p = 0
-        for s, e in zip(starts, ends):
-            n = int(e - s)
-            if n:
-                edge_idx[p:p+n] = indices[s:e]
-                p += n
+        # gather all edge indices into one big array
+        # base start pointer repeated for each outgoing edge
+        base = np.repeat(starts, lens)  # [total]
+        
+        # offset within each head's neighbor block: 0,1,2,... per head
+        # Example: lens=[2,3] -> offset=[0,1, 0,1,2]
+        group_start = np.repeat(np.cumsum(lens) - lens, lens)  # [total]
+        offset = np.arange(total, dtype=np.int64) - group_start
 
+        # absolute positions into `indices`
+        pos = base + offset  # [total]
+        edge_idx = indices[pos]  # [total] edge indices into KG
+        
         # build sampled_edges: [batch_idx, head, rel, tail]
         sampled_edges = np.column_stack([batch_rep, KG[edge_idx]]).astype(np.int64)
-        sampled_edges = torch.from_numpy(sampled_edges).long()
-
-        # same as your original code after this point
+        sampled_edges = torch.LongTensor(sampled_edges).to(self.device)
+        
         head_nodes, head_index = torch.unique(
             sampled_edges[:, [0, 1]], dim=0, sorted=True, return_inverse=True
         )
