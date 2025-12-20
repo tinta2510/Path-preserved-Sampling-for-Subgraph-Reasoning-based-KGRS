@@ -108,14 +108,12 @@ class AdaptiveSubgraphLayer(nn.Module):
         B = q_sub.size(0)
         node_batch = nodes[:, 0].long()      # [N]
         node_ent   = nodes[:, 1].long()      # [N]
-        
-        # Build target pairs [B,2]: (b, q_sub[b])
-        target = torch.stack([torch.arange(B, device=nodes.device), q_sub], dim=1)  # [B,2]
 
         # Find matching positions by hashing pairs
         key_nodes  = node_batch * (self.n_user + self.n_node + 10) + node_ent
-        key_target = target[:,0] * (self.n_user + self.n_node + 10) + target[:,1]
-
+        key_target = torch.arange(B, device=nodes.device) * (self.n_user + self.n_node + 10) + q_sub
+        
+        # Find indices of query user nodes in current node set
         idx = (key_nodes[:, None] == key_target[None, :]).float().argmax(dim=0)  # [B]
         h_user = h_tilde[idx]  # [B,D]
         
@@ -199,20 +197,29 @@ class AdaptiveSubgraphLayer(nn.Module):
             B = q_sub.size(0)
             node_batch = nodes[:, 0].long()      # [N]
             node_ent   = nodes[:, 1].long()      # [N]
-            hidden_user = torch.zeros(B, D, device=self.device)
+            
+            # Find matching positions by hashing pairs
+            key_nodes  = node_batch * (self.n_user + self.n_node + 10) + node_ent
+            key_target = torch.arange(B, device=nodes.device) * (self.n_user + self.n_node + 10) + q_sub
+            
+            # Find indices of query user nodes in current node set
+            idx = (key_nodes[:, None] == key_target[None, :]).float().argmax(dim=0)  # [B]
+            hidden_user = h_tilde[idx]  # [B,D]
+            
+            # hidden_user = torch.zeros(B, D, device=self.device)
 
-            for b in range(B):
-                center_uid = q_sub[b].item()
-                # center user node for this query
-                center_mask = (node_batch == b) & (node_ent == center_uid)
+            # for b in range(B):
+            #     center_uid = q_sub[b].item()
+            #     # center user node for this query
+            #     center_mask = (node_batch == b) & (node_ent == center_uid)
 
-                if center_mask.any():
-                    # there should normally be exactly one; take the first
-                    hidden_user[b] = hidden_all[center_mask][0]
-                else:
-                    raise ValueError(
-                        f"Center user node (batch {b}, user {center_uid}) not found in current nodes."
-                    )            
+            #     if center_mask.any():
+            #         # there should normally be exactly one; take the first
+            #         hidden_user[b] = hidden_all[center_mask][0]
+            #     else:
+            #         raise ValueError(
+            #             f"Center user node (batch {b}, user {center_uid}) not found in current nodes."
+            #         )            
                 
             is_item = (nodes[:, 1] >= self.n_user) & (
                 nodes[:, 1] < self.n_user + self.n_item
