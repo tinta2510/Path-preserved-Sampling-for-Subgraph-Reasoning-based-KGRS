@@ -322,7 +322,7 @@ class DataLoader:
         else:
             KG = self.tKG
             M_sub = self.tM_sub
-        print("frontier size:", nodes.shape[0])
+
         # nodes: n(node) x 2 with (batch_idx, node_idx)
         node_1hot = csr_matrix(
             (np.ones(len(nodes)), (nodes[:,1], nodes[:,0])), 
@@ -330,7 +330,6 @@ class DataLoader:
         ) # [n_nodes x batch_size]
         edge_1hot = M_sub.dot(node_1hot) # [n_edges x batch_size] (edges and the batch they belong to)
         edges = np.nonzero(edge_1hot) # tuple (edge_idx, batch_idx) (indices of non-zero rows, cols)
-        print("expanded nodes:", nodes.shape[0], "edges:", edges.shape[0])
         sampled_edges = np.concatenate(
             [np.expand_dims(edges[1],1), KG[edges[0]]],
             axis=1

@@ -82,7 +82,64 @@ class AdaptiveSubgraphLayer(nn.Module):
             alpha:             [N] node-wise gates α_z (before pruning)
             edges:             [E,6] unchanged (not used by later layers)
         """
-        # device = hidden.device
+        # ----- Filtering edges before message passing -----
+        # On the last layer, we only compute representations for items and query users.
+        # Keep only edges whose destination nodes are of these types.
+        if id_layer == n_layer - 1:
+            # Save full node set before filtering for later use
+            nodes_full = nodes
+            
+            batch = edges[:, 0]
+            tail  = edges[:, 3]
+
+            # keep edges where tail is either: items or query users
+            is_item_tail = (edges[:,3] >= self.n_user) & (edges[:,3] < self.n_user + self.n_item)
+            
+            is_query_user_tail = (tail == q_sub[batch])
+
+            is_kept_tail = is_item_tail | is_query_user_tail
+            edges = edges[is_kept_tail]
+            
+            # rebuild current-layer node from kept edges
+            nodes, tail_index = torch.unique(
+                edges[:, [0, 3]], dim=0, sorted=True, return_inverse=True
+            )
+            
+            # rebuild edges with new node indices
+            edges = torch.cat(
+                [edges[:, 0:5], tail_index.unsqueeze(-1)], dim=1
+            )
+            
+            # rebuild old_nodes_new_idx mapping
+            ## Create a hash for efficient lookup
+            ## Hash: batch_idx * large_prime + node_id
+            large_prime = self.n_user + self.n_node + 10
+            hash_full = nodes_full[:, 0] * large_prime + nodes_full[:, 1]  # [N_full]
+            hash_new = nodes[:, 0] * large_prime + nodes[:, 1]              # [N_new]
+
+            # Sort hash_new to enable binary search
+            hash_new_sorted, sort_idx = hash_new.sort()
+
+            # For each hash in hash_full, find its position in hash_new_sorted
+            positions = torch.searchsorted(hash_new_sorted, hash_full)  # [N_full]
+
+            # Clamp positions to valid range to avoid index errors
+            positions = positions.clamp(0, hash_new_sorted.size(0) - 1)
+
+            # Map back to original indices in nodes
+            full_to_new = sort_idx[positions]  # [N_full]
+
+            # Verify matches (optional but recommended for correctness)
+            # If hash doesn't match, the mapping is invalid (shouldn't happen with self-loops)
+            # But we keep it for safety
+            # matches = (hash_full == hash_new_sorted[positions])
+            # full_to_new = torch.where(matches, full_to_new, torch.full_like(full_to_new, -1))
+
+            # Chain the mappings: prev_layer -> nodes_full -> nodes
+            old_nodes_new_idx = full_to_new[old_nodes_new_idx]  # [N_prev]
+                                    
+        # Personalize PageRank for edge filtering (later added)
+        # TODO
 
         # ---- Edge indexing wrt previous & current node sets ----
         sub = edges[:, 4]  # previous-layer node index
@@ -112,11 +169,11 @@ class AdaptiveSubgraphLayer(nn.Module):
         node_batch = nodes[:, 0].long()      # [N]
         node_ent   = nodes[:, 1].long()      # [N]
 
-        # Find matching positions by hashing pairs
+        ## Find matching positions by hashing pairs
         key_nodes  = node_batch * (self.n_user + self.n_node + 10) + node_ent
         key_target = torch.arange(B, device=nodes.device) * (self.n_user + self.n_node + 10) + q_sub
         
-        # Find indices of query user nodes in current node set
+        ## Find indices of query user nodes in current node set
         idx = (key_nodes[:, None] == key_target[None, :]).float().argmax(dim=0)  # [B]
         h_user = h_tilde[idx]  # [B,D]
 
@@ -127,9 +184,7 @@ class AdaptiveSubgraphLayer(nn.Module):
             node_batch=node_batch,
         )
 
-        # ==================================================================
         # 6) AdaProp-style INCREMENTAL SAMPLING using alpha as score
-        # ==================================================================
         N = nodes.size(0)
         keep_mask = torch.zeros(N, dtype=torch.bool, device=self.device)
 
@@ -142,8 +197,7 @@ class AdaptiveSubgraphLayer(nn.Module):
         diff_mask[old_nodes_new_idx] = False      # True only for "new" nodes
         candidate_idx = diff_mask.nonzero(as_tuple=False).squeeze(-1)
 
-        # If we are NOT at the last layer and have a top_k budget, sample;
-        # for the last layer we can skip sampling and keep all (then filter items).
+        # We already filtered non-item entities on the last layer, so NO need to sample there
         if (
             self.K is not None
             and self.K > 0
@@ -194,7 +248,7 @@ class AdaptiveSubgraphLayer(nn.Module):
             idx = (key_nodes[:, None] == key_target[None, :]).float().argmax(dim=0)  # [B]
             hidden_user = h_tilde[idx]  # [B,D]
                 
-                
+            # keep only item nodes (remove query users from final node set)
             is_item = (nodes[:, 1] >= self.n_user) & (
                 nodes[:, 1] < self.n_user + self.n_item
             )
@@ -298,24 +352,19 @@ class AdaptiveSubgraphModel(torch.nn.Module):
 
         for i in range(self.n_layer):
             # Expand user-centric computation graph for this layer
-            t0 = time.time()
             nodes_np = nodes.detach().cpu().numpy()
             with threadpool_limits(limits=16):
                 nodes, edges, old_nodes_new_idx = self.loader.get_neighbors(nodes_np, mode=mode)
-            print("get_neighbors sec:", time.time() - t0)
 
-            t1 = time.time()
             nodes = nodes.to(self.device, non_blocking=True)
             edges = edges.to(self.device, non_blocking=True)
             old_nodes_new_idx = old_nodes_new_idx.to(self.device, non_blocking=True)
-            print("CPU to GPU sec:", time.time() - t1)
             
             # --- LOGGING ---
             if mode == 'test':
                 subgraph_sizes_before_sampling.append(nodes.shape[0])
             # --------------
             
-            t2 = time.time()
             # One AdaptiveSubgraphLayer step
             (
                 hidden,
@@ -336,7 +385,6 @@ class AdaptiveSubgraphModel(torch.nn.Module):
                 self.n_layer,
                 old_nodes_new_idx,
             )
-            print("gnn layer sec:", time.time() - t2)
             hidden = self.dropout(hidden)
             
             # --- LOGGING ---
