@@ -264,30 +264,6 @@ class DataLoader:
         self.tn_fact = len(self.tKG)
         self.tM_sub = csr_matrix((np.ones((self.tn_fact,)), (np.arange(self.tn_fact), self.tKG[:,0])), shape=(self.tn_fact, self.n_nodes))
 
-    # def load_train_query(self, triples):
-    #     triples.sort(key=lambda x:(x[0], x[1]))
-    #     pos_items = defaultdict(lambda:list())
-    #     neg_items = defaultdict(list)
-        
-    #     for trip in triples:
-    #         h, r, t = trip            
-    #         pos_items[(h,r)].append(t)
-    #         while True:
-    #             neg_item = np.random.randint(low=self.n_users, high=self.n_users + self.n_items, size=1)[0]  #重要修改！low=n_users
-    #             if neg_item not in self.known_user_set[h]:
-    #                 break
-    #         neg_items[(h,r)].append(neg_item)
-        
-    #     queries = []
-    #     answers = []
-    #     wrongs = []
-    #     for key in pos_items:
-    #         queries.append(key) # Each query (h,r)
-    #         answers.append(np.array(pos_items[key])) # All positive items for (h,r)
-    #         wrongs.append(np.array(neg_items[key]))  # Sampled negative items for positive items for (h,r)
-        
-    #     return queries, answers, wrongs
-
     def load_train_query(self, triples):
         """
         Args:

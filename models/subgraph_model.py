@@ -1,3 +1,6 @@
+import time
+
+from threadpoolctl import threadpool_info, threadpool_limits
 import torch
 import torch.nn as nn
 from torch_scatter import scatter
@@ -295,20 +298,26 @@ class AdaptiveSubgraphModel(torch.nn.Module):
 
         for i in range(self.n_layer):
             # Expand user-centric computation graph for this layer
+            print("Before get_neighbors:", threadpool_info())
+            t0 = time.time()
             nodes_np = nodes.detach().cpu().numpy()
-            nodes, edges, old_nodes_new_idx = self.loader.get_neighbors(
-                nodes_np, mode=mode
-            )
-            
+            with threadpool_limits(limits=16):
+                nodes, edges, old_nodes_new_idx = self.loader.get_neighbors(nodes_np, mode=mode)
+            print("get_neighbors sec:", time.time() - t0)
+            print("After get_neighbors:", threadpool_info())
+
+            t1 = time.time()
             nodes = nodes.to(self.device, non_blocking=True)
             edges = edges.to(self.device, non_blocking=True)
             old_nodes_new_idx = old_nodes_new_idx.to(self.device, non_blocking=True)
-                        
+            print("CPU to GPU sec:", time.time() - t1)
+            
             # --- LOGGING ---
             if mode == 'test':
                 subgraph_sizes_before_sampling.append(nodes.shape[0])
             # --------------
             
+            t2 = time.time()
             # One AdaptiveSubgraphLayer step
             (
                 hidden,
@@ -329,7 +338,7 @@ class AdaptiveSubgraphModel(torch.nn.Module):
                 self.n_layer,
                 old_nodes_new_idx,
             )
-
+            print("gnn layer sec:", time.time() - t2)
             hidden = self.dropout(hidden)
             
             # --- LOGGING ---

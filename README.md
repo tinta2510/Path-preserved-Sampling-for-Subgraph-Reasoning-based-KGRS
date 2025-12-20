@@ -8,3 +8,10 @@ pip install torch_scatter -f https://data.pyg.org/whl/torch-2.8.0+cu128.html
 
 # other deps your code uses
 pip install numpy scipy tqdm
+
+export OMP_NUM_THREADS=16
+export MKL_NUM_THREADS=16
+export OPENBLAS_NUM_THREADS=16
+export NUMEXPR_NUM_THREADS=16
+export VECLIB_MAXIMUM_THREADS=16
+export MKL_DYNAMIC=FALSE
