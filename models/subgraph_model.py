@@ -298,13 +298,11 @@ class AdaptiveSubgraphModel(torch.nn.Module):
 
         for i in range(self.n_layer):
             # Expand user-centric computation graph for this layer
-            print("Before get_neighbors:", threadpool_info())
             t0 = time.time()
             nodes_np = nodes.detach().cpu().numpy()
             with threadpool_limits(limits=16):
                 nodes, edges, old_nodes_new_idx = self.loader.get_neighbors(nodes_np, mode=mode)
             print("get_neighbors sec:", time.time() - t0)
-            print("After get_neighbors:", threadpool_info())
 
             t1 = time.time()
             nodes = nodes.to(self.device, non_blocking=True)
