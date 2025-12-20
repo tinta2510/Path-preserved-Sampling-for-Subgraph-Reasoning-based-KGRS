@@ -88,7 +88,7 @@ class BaseModel(object):
             scaler.step(self.optimizer)
             scaler.update()
 
-            if i % 250 == 0 :
+            if i % 100 == 0 :
                 print('batch:',i, 'loss:', loss.item())
 
         self.t_time += time.time() - t_time
