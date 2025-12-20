@@ -229,6 +229,27 @@ class DataLoader:
         print(f"Inductive training set generated with {len(ind_item)} new items.")
         return fcf, train_cf
 
+    def _build_csr_adj_from_KG(self, KG: np.ndarray):
+        """
+        Build CSR adjacency that maps head node -> contiguous block of edge indices.
+        Returns:
+            indptr: (n_nodes+1,) int64
+            indices: (n_edges,) int64   (edge indices into KG)
+        """
+        heads = KG[:, 0].astype(np.int64)
+
+        # stable sort by head so that each node's edges are contiguous
+        order = np.argsort(heads, kind="mergesort")
+        heads_sorted = heads[order]
+
+        counts = np.bincount(heads_sorted, minlength=self.n_nodes).astype(np.int64)
+        indptr = np.empty(self.n_nodes + 1, dtype=np.int64)
+        indptr[0] = 0
+        np.cumsum(counts, out=indptr[1:])
+
+        indices = order.astype(np.int64)  # edge indices into KG
+        return indptr, indices
+
     def load_graph(self, triples):      
         """
         Input:
@@ -244,33 +265,15 @@ class DataLoader:
 
         # Merge with existing triples
         self.KG = np.concatenate([np.array(triples), idd], 0)
-        # self.n_fact = len(self.KG)
         
-        # build sparse matrix 
-        # Each row = one edge (triplet) from self.KG.
-        # Each column = one node index.
-        # Entry = 1 if that edge’s head node equals the column index.
-        # So M_sub[i, j] = 1 if the i-th edge originates from node j.
-        # self.M_sub = csr_matrix(
-        #     (np.ones((self.n_fact,)), # values to be placed in the sparse matrix
-        #      (np.arange(self.n_fact), self.KG[:,0])), # row indices, column indices
-        #     shape=(self.n_fact, self.n_nodes)) # facts and its head nodes
-        
-        self.adj_list = defaultdict(list)  # node -> list of edge indices
-        for edge_idx, (h, r, t) in enumerate(self.KG):
-            self.adj_list[int(h)].append(edge_idx)
+        self.indptr, self.indices = self._build_csr_adj_from_KG(self.KG)
 
     def load_test_graph(self, triples):  
         idd = np.concatenate([np.expand_dims(np.arange(self.n_nodes),1), (2*self.n_rel+2)*np.ones((self.n_nodes, 1)), np.expand_dims(np.arange(self.n_nodes),1)], 1)
 
         self.tKG = np.concatenate([np.array(triples), idd], 0)
     
-        # self.tn_fact = len(self.tKG)
-        # self.tM_sub = csr_matrix((np.ones((self.tn_fact,)), (np.arange(self.tn_fact), self.tKG[:,0])), shape=(self.tn_fact, self.n_nodes))
-        
-        self.tadj_list = defaultdict(list)
-        for edge_idx, (h, r, t) in enumerate(self.tKG):
-            self.tadj_list[int(h)].append(edge_idx)
+        self.tindptr, self.tindices = self._build_csr_adj_from_KG(self.tKG)
 
     def load_train_query(self, triples):
         """
@@ -322,75 +325,51 @@ class DataLoader:
             answers.append(np.array(trip_hr[key]))
         return queries, answers
 
-    # def get_neighbors(self, nodes, mode='train'):
-        
-    #     if mode=='train':
-    #         KG = self.KG
-    #         M_sub = self.M_sub # (n_edges, n_nodes) (edges and its one-hot head nodes )
-    #     else:
-    #         KG = self.tKG
-    #         M_sub = self.tM_sub
-
-    #     # nodes: n(node) x 2 with (batch_idx, node_idx)
-    #     node_1hot = csr_matrix(
-    #         (np.ones(len(nodes)), (nodes[:,1], nodes[:,0])), 
-    #         shape=(self.n_nodes, nodes.shape[0])
-    #     ) # [n_nodes x batch_size]
-    #     edge_1hot = M_sub.dot(node_1hot) # [n_edges x batch_size] (edges and the batch they belong to)
-    #     edges = np.nonzero(edge_1hot) # tuple (edge_idx, batch_idx) (indices of non-zero rows, cols)
-    #     sampled_edges = np.concatenate(
-    #         [np.expand_dims(edges[1],1), KG[edges[0]]],
-    #         axis=1
-    #     )     # (batch_idx, head, rela, tail)
-    #     sampled_edges = torch.LongTensor(sampled_edges)
-
-    #     # index to nodes
-    #     # head_nodes: tuple of unique (batch_idx, head_node); head_index: index of head_nodes in sampled_edges
-    #     head_nodes, head_index = torch.unique(sampled_edges[:,[0,1]], dim=0, sorted=True, return_inverse=True)
-    #     tail_nodes, tail_index = torch.unique(sampled_edges[:,[0,3]], dim=0, sorted=True, return_inverse=True)
-
-    #     # 
-    #     sampled_edges = torch.cat([sampled_edges, head_index.unsqueeze(1), tail_index.unsqueeze(1)], 1)
-       
-    #     mask = sampled_edges[:,2] == (self.n_rel*2 + 2)
-    #     _, old_idx = head_index[mask].sort()
-    #     old_nodes_new_idx = tail_index[mask][old_idx]
-
-    #     return tail_nodes, sampled_edges, old_nodes_new_idx
-
     def get_neighbors(self, nodes, mode='train'):
-        if mode=='train':
+        batch = nodes[:, 0].astype(np.int64)
+        head  = nodes[:, 1].astype(np.int64)
+
+        if mode == 'train':
             KG = self.KG
-            adj_list = self.adj_list
+            indptr, indices = self.indptr, self.indices
         else:
             KG = self.tKG
-            adj_list = self.tadj_list
-        
-        # Vectorized lookup using list comprehension
-        edges_and_batches = [
-            (edge_idx, batch_idx) 
-            for batch_idx, node_id in nodes
-            for edge_idx in adj_list[int(node_id)]
-        ]
-        
-        edge_indices, batch_indices = zip(*edges_and_batches)
-        edge_indices = np.array(edge_indices)
-        batch_indices = np.array(batch_indices)
-        
-        # Vectorized array building
-        sampled_edges = np.column_stack([
-            batch_indices,
-            KG[edge_indices]
-        ])
+            indptr, indices = self.tindptr, self.tindices
+
+        starts = indptr[head]
+        ends   = indptr[head + 1]
+        lens   = ends - starts
+        total  = int(lens.sum())
+
+        # repeat batch ids per outgoing edge
+        batch_rep = np.repeat(batch, lens)
+
+        # gather all edge indices into one big array (loop only over heads, not edges)
+        edge_idx = np.empty(total, dtype=np.int64)
+        p = 0
+        for s, e in zip(starts, ends):
+            n = int(e - s)
+            if n:
+                edge_idx[p:p+n] = indices[s:e]
+                p += n
+
+        # build sampled_edges: [batch_idx, head, rel, tail]
+        sampled_edges = np.column_stack([batch_rep, KG[edge_idx]]).astype(np.int64)
         sampled_edges = torch.from_numpy(sampled_edges).long()
-        
-        # Rest remains the same
-        head_nodes, head_index = torch.unique(sampled_edges[:,[0,1]], dim=0, sorted=True, return_inverse=True)
-        tail_nodes, tail_index = torch.unique(sampled_edges[:,[0,3]], dim=0, sorted=True, return_inverse=True)
-        
-        sampled_edges = torch.cat([sampled_edges, head_index.unsqueeze(1), tail_index.unsqueeze(1)], 1)
-    
-        mask = sampled_edges[:,2] == (self.n_rel*2 + 2)
+
+        # same as your original code after this point
+        head_nodes, head_index = torch.unique(
+            sampled_edges[:, [0, 1]], dim=0, sorted=True, return_inverse=True
+        )
+        tail_nodes, tail_index = torch.unique(
+            sampled_edges[:, [0, 3]], dim=0, sorted=True, return_inverse=True
+        )
+
+        sampled_edges = torch.cat(
+            [sampled_edges, head_index.unsqueeze(1), tail_index.unsqueeze(1)], dim=1
+        )
+
+        mask = sampled_edges[:, 2] == (self.n_rel * 2 + 2)  # self-loop rel id
         _, old_idx = head_index[mask].sort()
         old_nodes_new_idx = tail_index[mask][old_idx]
 
