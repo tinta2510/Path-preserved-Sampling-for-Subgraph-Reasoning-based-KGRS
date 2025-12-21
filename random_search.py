@@ -29,7 +29,7 @@ def sample_space():
 # Random search loop
 # =========================
 N_TRIALS = 10
-DATA_PATH = "data/last-fm-lightkg/"
+DATA_PATH = "data/last-fm/"
 GPU_ID = 0
 LOG_FILE = "results/random_search_log.jsonl"
 
